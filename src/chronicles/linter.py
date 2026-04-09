@@ -1,6 +1,7 @@
 """Linter — validates wiki structure, manages confidence lifecycle, regenerates GOLD.md."""
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from datetime import date
@@ -13,6 +14,8 @@ import yaml
 from chronicles.archiver import rotate_records
 from chronicles.config import load_config
 from chronicles.templates import TemplateRenderer
+
+log = logging.getLogger("chronicles")
 
 # Maps article types to GOLD.md section names
 TYPE_TO_SECTION: dict[str, str] = {
@@ -374,6 +377,7 @@ def lint(chronicles_dir: Path) -> LintReport:
     # Archive old records before validation
     moved = rotate_records(chronicles_dir, config.archive.after_days)
     if moved:
+        log.info("Archived %d old record(s)", len(moved))
         report.warnings.append(f"Archived {len(moved)} old record(s)")
 
     renderer = TemplateRenderer()
@@ -381,21 +385,30 @@ def lint(chronicles_dir: Path) -> LintReport:
     articles_dir = chronicles_dir / "wiki" / "articles"
     articles, load_errors = _load_articles(articles_dir)
     report.errors.extend(load_errors)
+    log.info("Loaded %d wiki article(s)", len(articles))
 
     articles = _detect_and_merge_duplicates(articles, report)
 
     warnings = _check_wikilinks(articles)
     report.warnings.extend(warnings)
+    if warnings:
+        log.info("Found %d broken wikilink(s)", len(warnings))
 
     promotions = _manage_confidence(articles, config.confidence.promotion_threshold)
     report.promotions.extend(promotions)
+    if promotions:
+        log.info("Promoted %d article(s): %s", len(promotions), ", ".join(promotions))
 
     _detect_contested(chronicles_dir, articles, report)
     _detect_stale(chronicles_dir, articles, report)
 
     _regenerate_categories(chronicles_dir, articles, renderer)
+    cat_dir = chronicles_dir / "wiki" / "categories"
+    cat_count = len(list(cat_dir.glob("*.md"))) if cat_dir.exists() else 0
+    log.info("Regenerated %d category page(s)", cat_count)
 
     gold_count = _regenerate_gold(chronicles_dir, articles, renderer)
     report.gold_count = gold_count
+    log.info("GOLD.md: %d high-confidence article(s)", gold_count)
 
     return report

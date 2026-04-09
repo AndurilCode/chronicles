@@ -1,11 +1,14 @@
 """Writer — produces records, CHRONICLES.md entries, and wiki pages."""
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 
 from chronicles.models import ExtractionResult
 from chronicles.templates import TemplateRenderer
+
+log = logging.getLogger("chronicles")
 
 STATUS_ICONS: dict[str, str] = {
     "complete": "✅",
@@ -93,14 +96,19 @@ def write_wiki_pages(
     result: ExtractionResult,
     date: str,
     renderer: TemplateRenderer,
-) -> None:
-    """Process wiki_instructions from ExtractionResult and write wiki pages."""
+) -> int:
+    """Process wiki_instructions from ExtractionResult and write wiki pages.
+
+    Returns the number of pages written.
+    """
+    count = 0
     for instruction in result.wiki_instructions:
         action = instruction.get("action", "create")
         rel_path = instruction.get("path", "")
         data = instruction.get("data", {})
 
         if not rel_path or not rel_path.endswith(".md"):
+            log.warning("Skipping wiki instruction with invalid path: %r", rel_path)
             continue
 
         out_path = chronicles_dir / rel_path
@@ -114,6 +122,10 @@ def write_wiki_pages(
         if action in ("create", "update"):
             content = renderer.render(template_name, context)
             out_path.write_text(content)
+            log.info("  wiki: %s (%s, confidence=%s)",
+                     rel_path, data.get("type", "?"), data.get("confidence", "?"))
+            count += 1
+    return count
 
 
 # ---------------------------------------------------------------------------

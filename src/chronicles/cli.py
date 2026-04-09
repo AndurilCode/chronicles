@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
@@ -14,6 +15,8 @@ from chronicles.linter import lint
 from chronicles.sources import detect_source, get_source, ALL_SOURCES
 from chronicles.templates import TemplateRenderer
 from chronicles.writer import write_record, append_chronicles_entry, write_wiki_pages
+
+log = logging.getLogger("chronicles")
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -36,6 +39,11 @@ def main(argv: list[str] | None = None) -> None:
 
     args = parser.parse_args(argv)
 
+    logging.basicConfig(
+        level=logging.INFO,
+        format="[%(name)s] %(message)s",
+    )
+
     if args.command == "ingest":
         _run_ingest(args)
     elif args.command == "lint":
@@ -44,13 +52,23 @@ def main(argv: list[str] | None = None) -> None:
 
 def _parse_and_clean_one(args: tuple[Path, str | None]):
     """Parse and clean a single transcript. Module-level for pickling."""
+    _log = logging.getLogger("chronicles")
     path, source_override = args
     if source_override:
         source = get_source(source_override)
+        _log.info("Parsing %s (forced: %s)", path.name, source.key)
     else:
         source = detect_source(path)
+        _log.info("Parsing %s (detected: %s)", path.name, source.key)
     transcript = source.parse_session(path)
-    return clean_transcript(transcript)
+    _log.info("Parsed %d messages, model=%s, cwd=%s",
+              len(transcript.messages), transcript.model or "unknown", transcript.cwd)
+    cleaned = clean_transcript(transcript)
+    total_msgs = sum(len(c) for c in cleaned.chunks)
+    stripped = len(transcript.messages) - total_msgs
+    _log.info("Cleaned → %d messages in %d chunk(s) (stripped %d tool results)",
+              total_msgs, len(cleaned.chunks), stripped)
+    return cleaned
 
 
 def _parse_and_clean_all(paths: list[Path], source_override: str | None):
@@ -105,9 +123,12 @@ def _run_ingest(args: argparse.Namespace) -> None:
         print("No transcript files to process.", file=sys.stderr)
         sys.exit(1)
 
+    log.info("Processing %d transcript(s)", len(paths))
+
     source_override = args.source
     cleaned_transcripts = list(_parse_and_clean_all(paths, source_override))
 
+    log.info("Extracting via %s (model: %s)...", config.llm.provider, config.llm.model)
     with ThreadPoolExecutor(max_workers=config.llm.max_concurrent) as pool:
         results = list(pool.map(extractor.extract, cleaned_transcripts))
 
@@ -115,11 +136,21 @@ def _run_ingest(args: argparse.Namespace) -> None:
         date_str = cleaned.metadata.timestamp_start[:10]
         source_key = cleaned.metadata.source
 
-        write_record(chronicles_dir, result, source_key, date_str, renderer)
-        append_chronicles_entry(chronicles_dir, result, date_str, renderer)
-        write_wiki_pages(chronicles_dir, result, date_str, renderer)
+        log.info("Extracted: branch=%s, status=%s, %d decisions, %d problems, %d discovered, %d wiki articles",
+                 result.branch, result.status,
+                 len(result.decisions), len(result.problems),
+                 len(result.discovered), len(result.wiki_instructions))
 
-    print(f"Ingested {len(results)} session(s).")
+        record_path = write_record(chronicles_dir, result, source_key, date_str, renderer)
+        log.info("Wrote record: %s", record_path.relative_to(chronicles_dir))
+
+        append_chronicles_entry(chronicles_dir, result, date_str, renderer)
+        log.info("Updated CHRONICLES.md")
+
+        wiki_count = write_wiki_pages(chronicles_dir, result, date_str, renderer)
+        log.info("Wrote %d wiki page(s)", wiki_count)
+
+    log.info("Ingested %d session(s). Running lint...", len(results))
     _run_lint_internal(chronicles_dir)
 
 
@@ -133,21 +164,12 @@ def _run_lint_internal(chronicles_dir: Path) -> None:
     report = lint(chronicles_dir)
 
     if report.errors:
-        print(f"\nErrors ({len(report.errors)}):")
         for e in report.errors:
-            print(f"  - {e}")
+            log.error("  %s", e)
 
     if report.warnings:
-        print(f"\nWarnings ({len(report.warnings)}):")
         for w in report.warnings:
-            print(f"  - {w}")
-
-    if report.promotions:
-        print(f"\nPromotions ({len(report.promotions)}):")
-        for p in report.promotions:
-            print(f"  - {p}")
-
-    print(f"\nGOLD.md: {report.gold_count} high-confidence articles.")
+            log.warning("  %s", w)
 
 
 if __name__ == "__main__":
