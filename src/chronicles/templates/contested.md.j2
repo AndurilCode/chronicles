@@ -1,0 +1,16 @@
+---
+type: contested-index
+last_updated: {{ date }}
+contested_count: {{ count }}
+---
+
+# Contested Knowledge
+
+> These articles have conflicting evidence. Sessions working in related areas should note which side they observe.
+
+{% for a in articles %}## [[{{ a.title }}]]
+- **Original claim**: {{ a.original_claim }}
+- **Contested by**: [[{{ a.contested_by }}]] — {{ a.contested_reason }}
+- **Evidence for original**: {{ a.evidence_for }} sessions | **Evidence against**: {{ a.evidence_against }} sessions
+
+{% endfor %}

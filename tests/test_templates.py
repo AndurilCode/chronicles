@@ -177,6 +177,30 @@ def test_render_wiki_article_without_relationships():
     assert "relationships:" not in result
 
 
+def test_render_contested():
+    renderer = TemplateRenderer()
+    data = {
+        "date": "2026-04-09",
+        "count": 1,
+        "articles": [
+            {
+                "title": "refresh-strategy",
+                "original_claim": "Refresh tokens before expiry",
+                "contested_by": "2026-04-15_refactor-auth",
+                "contested_reason": "claims refresh-on-401 is better",
+                "evidence_for": 2,
+                "evidence_against": 1,
+            },
+        ],
+    }
+    result = renderer.render("contested", data)
+    assert "contested_count: 1" in result
+    assert "[[refresh-strategy]]" in result
+    assert "Refresh tokens before expiry" in result
+    assert "[[2026-04-15_refactor-auth]]" in result
+    assert "2 sessions" in result
+
+
 def test_custom_template_dir(tmp_path):
     """User-provided template dir overrides defaults."""
     custom = tmp_path / "templates"
