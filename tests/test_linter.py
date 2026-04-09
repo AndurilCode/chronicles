@@ -76,3 +76,28 @@ def test_lint_gold_excludes_low_confidence(chronicles_dir):
     report = lint(chronicles_dir)
     gold = (chronicles_dir / "GOLD.md").read_text()
     assert "low-article" not in gold
+
+
+def test_lint_detects_and_merges_duplicates(chronicles_dir):
+    _write_article(chronicles_dir, "connection-suffix-pattern",
+                   confidence="low", tags=["naming"],
+                   sources=["2026-04-01_session-a"])
+    _write_article(chronicles_dir, "conn-suffix-pattern",
+                   confidence="low", tags=["naming"],
+                   sources=["2026-04-05_session-b"])
+    report = lint(chronicles_dir)
+    articles = list((chronicles_dir / "wiki" / "articles").glob("*.md"))
+    assert len(articles) == 1
+    content = articles[0].read_text()
+    assert "session-a" in content
+    assert "session-b" in content
+
+
+def test_lint_no_merge_for_different_topics(chronicles_dir):
+    _write_article(chronicles_dir, "auth-pattern", confidence="low",
+                   article_type="convention", tags=["auth"])
+    _write_article(chronicles_dir, "retry-pattern", confidence="low",
+                   article_type="pattern", tags=["retry"])
+    report = lint(chronicles_dir)
+    articles = list((chronicles_dir / "wiki" / "articles").glob("*.md"))
+    assert len(articles) == 2

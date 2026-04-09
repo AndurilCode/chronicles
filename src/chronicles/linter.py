@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from datetime import date
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
@@ -148,6 +149,55 @@ def _manage_confidence(
     return promotions
 
 
+def _detect_and_merge_duplicates(articles: list[dict], report: LintReport) -> list[dict]:
+    if len(articles) < 2:
+        return articles
+    merged_indices: set[int] = set()
+    for i, a in enumerate(articles):
+        if i in merged_indices:
+            continue
+        for j in range(i + 1, len(articles)):
+            if j in merged_indices:
+                continue
+            b = articles[j]
+            if a["frontmatter"].get("type") != b["frontmatter"].get("type"):
+                continue
+            ratio = SequenceMatcher(None, a["path"].stem, b["path"].stem).ratio()
+            if ratio < 0.6:
+                continue
+            a_tags = set(a["frontmatter"].get("tags", []))
+            b_tags = set(b["frontmatter"].get("tags", []))
+            if not a_tags & b_tags:
+                continue
+            report.warnings.append(f"Merged duplicate: {b['path'].stem} into {a['path'].stem}")
+            _merge_article(a, b)
+            merged_indices.add(j)
+            b["path"].unlink()
+    return [a for i, a in enumerate(articles) if i not in merged_indices]
+
+
+def _merge_article(target: dict, source: dict) -> None:
+    target_fm = target["frontmatter"]
+    source_fm = source["frontmatter"]
+    existing_sources = target_fm.get("sources", [])
+    new_sources = source_fm.get("sources", [])
+    all_sources = list(dict.fromkeys(existing_sources + new_sources))
+    existing_tags = set(target_fm.get("tags", []))
+    new_tags = set(source_fm.get("tags", []))
+    all_tags = sorted(existing_tags | new_tags)
+    content = target["text"]
+    content = re.sub(
+        r"sources:\n(  - .+\n)+",
+        "sources:\n" + "".join(f'  - "{s}"\n' if "[[" not in s else f"  - {s}\n" for s in all_sources),
+        content,
+    )
+    content = re.sub(r"tags: \[.+\]", f"tags: {all_tags}", content)
+    target["path"].write_text(content)
+    target["text"] = content
+    target["frontmatter"]["sources"] = all_sources
+    target["frontmatter"]["tags"] = all_tags
+
+
 def _regenerate_gold(
     chronicles_dir: Path,
     articles: list[dict],
@@ -219,6 +269,8 @@ def lint(chronicles_dir: Path) -> LintReport:
     articles_dir = chronicles_dir / "wiki" / "articles"
     articles, load_errors = _load_articles(articles_dir)
     report.errors.extend(load_errors)
+
+    articles = _detect_and_merge_duplicates(articles, report)
 
     warnings = _check_wikilinks(articles)
     report.warnings.extend(warnings)
