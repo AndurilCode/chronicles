@@ -6,7 +6,11 @@ sources:
 {% endfor %}first_seen: {{ first_seen }}
 last_confirmed: {{ last_confirmed }}
 tags: {{ tags }}
----
+{% if relationships %}relationships:
+{% for r in relationships %}  - type: {{ r.type }}
+    target: {{ r.target }}
+{% if r.source %}    source: {{ r.source }}
+{% endif %}{% endfor %}{% endif %}---
 
 # {{ title }}
 

@@ -130,6 +130,53 @@ def test_render_wiki_category():
     assert "## Open Questions" in result
 
 
+def test_render_wiki_article_with_relationships():
+    renderer = TemplateRenderer()
+    data = {
+        "type": "convention",
+        "confidence": "medium",
+        "sources": ["2026-04-09_feat-oauth"],
+        "first_seen": "2026-04-09",
+        "last_confirmed": "2026-04-09",
+        "tags": ["naming"],
+        "title": "New Convention",
+        "body": "This replaces the old convention.",
+        "evidence": ["Found in session"],
+        "implications": ["Follow new pattern"],
+        "relationships": [
+            {"type": "supersedes", "target": "old-convention", "source": "[[2026-04-09_feat-oauth]]"},
+            {"type": "depends-on", "target": "base-pattern"},
+        ],
+    }
+    result = renderer.render("wiki_article", data)
+    assert "relationships:" in result
+    assert "type: supersedes" in result
+    assert "target: old-convention" in result
+    assert "type: depends-on" in result
+    assert "target: base-pattern" in result
+    assert "source: [[2026-04-09_feat-oauth]]" in result
+
+
+def test_render_wiki_article_without_relationships():
+    """Relationships block is omitted when empty."""
+    renderer = TemplateRenderer()
+    data = {
+        "type": "convention",
+        "confidence": "low",
+        "sources": ["2026-04-09_test"],
+        "first_seen": "2026-04-09",
+        "last_confirmed": "2026-04-09",
+        "tags": ["test"],
+        "title": "No Relationships",
+        "body": "Simple article.",
+        "evidence": ["evidence"],
+        "implications": ["implication"],
+        "relationships": [],
+    }
+    result = renderer.render("wiki_article", data)
+    assert "relationships:" not in result
+
+
 def test_custom_template_dir(tmp_path):
     """User-provided template dir overrides defaults."""
     custom = tmp_path / "templates"

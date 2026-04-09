@@ -62,6 +62,50 @@ def test_write_wiki_pages(chronicles_dir):
     assert "Connection Suffix" in content
     assert "confidence: low" in content
 
+def test_write_wiki_pages_with_relationships(chronicles_dir):
+    """Relationships from wiki_instructions are passed to template."""
+    from chronicles.models import ExtractionResult
+    from chronicles.templates import TemplateRenderer
+    from chronicles.writer import write_wiki_pages
+
+    renderer = TemplateRenderer()
+    result = ExtractionResult(
+        branch="feat/test",
+        status="complete",
+        tags=["test"],
+        duration="10min",
+        files_changed=[],
+        objective="Test",
+        outcome="Tested",
+        decisions=[],
+        problems=[],
+        discovered=[],
+        continuity={"unfinished": [], "open_questions": [], "next": []},
+        wiki_instructions=[{
+            "action": "create",
+            "path": "wiki/articles/new-pattern.md",
+            "data": {
+                "title": "New Pattern",
+                "type": "pattern",
+                "confidence": "medium",
+                "tags": ["test"],
+                "body": "A new pattern.",
+                "evidence": ["evidence"],
+                "implications": ["implication"],
+            },
+            "relationships": [
+                {"type": "supersedes", "target": "old-pattern"},
+            ],
+        }],
+    )
+    count = write_wiki_pages(chronicles_dir, result, "2026-04-09", renderer)
+    assert count == 1
+    content = (chronicles_dir / "wiki" / "articles" / "new-pattern.md").read_text()
+    assert "relationships:" in content
+    assert "type: supersedes" in content
+    assert "target: old-pattern" in content
+
+
 def test_write_record_updates_frontmatter_count(chronicles_dir):
     renderer = TemplateRenderer()
     result = _make_result()

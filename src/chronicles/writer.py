@@ -124,7 +124,8 @@ def write_wiki_pages(
             data["sources"].append(record_ref)
 
         # Build template context with defaults for required fields
-        context = _build_wiki_context(data, date)
+        relationships = instruction.get("relationships", [])
+        context = _build_wiki_context(data, date, relationships=relationships)
 
         if action in ("create", "update"):
             content = renderer.render(template_name, context)
@@ -185,7 +186,7 @@ def _template_name_from_path(rel_path: str) -> str:
     return "wiki_article"
 
 
-def _build_wiki_context(data: dict, date: str) -> dict:
+def _build_wiki_context(data: dict, date: str, relationships: list | None = None) -> dict:
     """Build a complete context dict for a wiki template, filling in defaults."""
     return {
         "title": data.get("title", ""),
@@ -198,6 +199,8 @@ def _build_wiki_context(data: dict, date: str) -> dict:
         "sources": data.get("sources", []),
         "first_seen": data.get("first_seen", date),
         "last_confirmed": data.get("last_confirmed", date),
+        # relationship fields
+        "relationships": relationships or [],
         # category fields
         "articles": data.get("articles", []),
         "open_questions": data.get("open_questions", []),
