@@ -181,9 +181,18 @@ def _run_ingest(args: argparse.Namespace) -> None:
             cleaned_transcripts,
         ))
 
+    # Check for already-ingested sessions (idempotency)
+    existing_records = {p.stem for p in (chronicles_dir / "records").glob("*.md")}
+
+    written = 0
     for cleaned, result in zip(cleaned_transcripts, results):
         date_str = cleaned.metadata.timestamp_start[:10]
         source_key = cleaned.metadata.source
+        record_stem = f"{date_str}_{result.slug}"
+
+        if record_stem in existing_records:
+            log.info("Skipping %s (already ingested)", record_stem)
+            continue
 
         log.info("Extracted: branch=%s, status=%s, %d decisions, %d problems, %d discovered, %d wiki articles",
                  result.branch, result.status,
@@ -198,8 +207,10 @@ def _run_ingest(args: argparse.Namespace) -> None:
 
         wiki_count = write_wiki_pages(chronicles_dir, result, date_str, renderer)
         log.info("Wrote %d wiki page(s)", wiki_count)
+        written += 1
 
-    log.info("Ingested %d session(s). Running lint...", len(results))
+    log.info("Ingested %d session(s) (%d skipped). Running lint...",
+             written, len(results) - written)
     _run_lint_internal(chronicles_dir)
 
 

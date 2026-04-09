@@ -100,7 +100,8 @@ class CopilotCLIExtractor(BaseExtractor):
         elif msg.role == "assistant":
             return f"[ASSISTANT] {msg.content}"
         elif msg.role == "tool_call":
-            return f"[TOOL_CALL: {msg.tool_name}] {json.dumps(msg.tool_input)}"
+            detail = msg.content or json.dumps(msg.tool_input) if msg.tool_input else ""
+            return f"[TOOL_CALL: {msg.tool_name}] {detail}".rstrip()
         elif msg.role == "tool_result":
             if msg.content:
                 return f"[TOOL_RESULT: {msg.tool_name}] {msg.content}"
