@@ -42,8 +42,32 @@ def main(argv: list[str] | None = None) -> None:
         _run_lint(args)
 
 
+def _ensure_chronicles_dir(chronicles_dir: Path) -> None:
+    """Bootstrap chronicles directory structure if it doesn't exist."""
+    for subdir in ["records", "archives", "wiki/articles", "wiki/categories", "wiki/queries"]:
+        (chronicles_dir / subdir).mkdir(parents=True, exist_ok=True)
+
+    chronicles_md = chronicles_dir / "CHRONICLES.md"
+    if not chronicles_md.exists():
+        from datetime import date
+        chronicles_md.write_text(
+            f"---\ntype: chronicles-index\nlast_updated: {date.today().isoformat()}\n"
+            f"record_count: 0\n---\n\n# Chronicles\n"
+        )
+
+    gold_md = chronicles_dir / "GOLD.md"
+    if not gold_md.exists():
+        from datetime import date
+        gold_md.write_text(
+            f"---\ntype: gold-index\nlast_updated: {date.today().isoformat()}\n"
+            f"promoted_count: 0\n---\n\n# Gold Notes\n\n"
+            f"> High-confidence, validated knowledge for this repository. Read before acting.\n"
+        )
+
+
 def _run_ingest(args: argparse.Namespace) -> None:
     chronicles_dir = args.chronicles_dir.resolve()
+    _ensure_chronicles_dir(chronicles_dir)
     config = load_config(chronicles_dir)
     renderer = TemplateRenderer()
     extractor = get_extractor(config.llm)
@@ -90,6 +114,7 @@ def _run_ingest(args: argparse.Namespace) -> None:
 
 def _run_lint(args: argparse.Namespace) -> None:
     chronicles_dir = args.chronicles_dir.resolve()
+    _ensure_chronicles_dir(chronicles_dir)
     _run_lint_internal(chronicles_dir)
 
 
