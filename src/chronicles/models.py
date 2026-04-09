@@ -76,3 +76,20 @@ class ExtractionResult:
     @property
     def slug(self) -> str:
         return self.branch.replace("/", "-").replace("\\", "-")
+
+
+@dataclass
+class Signal:
+    """A single agentic operational signal."""
+    pattern: str        # what happened
+    type: str           # "mistake" or "efficient"
+    rule: str           # imperative instruction for future agents
+    context: list[str]  # tags like "tool:Grep", "area:navigation"
+    severity: str       # "high" or "low"
+
+
+@dataclass
+class SignalsResult:
+    """Output from the signals extractor."""
+    signals: list[Signal]
+    demotions: list[str]   # existing rules to remove (contradicted)

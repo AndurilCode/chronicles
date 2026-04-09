@@ -1,5 +1,5 @@
 """Tests for core data models."""
-from chronicles.models import Message, Transcript, CleanedTranscript, TranscriptMetadata, ExtractionResult
+from chronicles.models import Message, Transcript, CleanedTranscript, TranscriptMetadata, ExtractionResult, Signal, SignalsResult
 
 
 def test_message_defaults():
@@ -98,3 +98,32 @@ def test_extraction_result_slug_strips_prefix():
         wiki_instructions=[],
     )
     assert result.slug == "feat-oauth-connections"
+
+
+def test_signal_dataclass():
+    s = Signal(
+        pattern="Agent used Bash grep instead of Grep tool",
+        type="mistake",
+        rule="Use the Grep tool instead of Bash with grep",
+        context=["tool:Bash", "tool:Grep"],
+        severity="high",
+    )
+    assert s.type == "mistake"
+    assert s.severity == "high"
+
+
+def test_signals_result_dataclass():
+    r = SignalsResult(
+        signals=[
+            Signal(
+                pattern="Searched src/ three times before finding module in lib/",
+                type="mistake",
+                rule="Check lib/ for utility modules",
+                context=["area:navigation"],
+                severity="low",
+            ),
+        ],
+        demotions=["Use find instead of Glob for deep searches"],
+    )
+    assert len(r.signals) == 1
+    assert len(r.demotions) == 1
