@@ -33,7 +33,7 @@ def test_build_prompt_includes_transcript():
     ]]
     ext = SignalsExtractor(_make_config())
     prompt = ext._build_prompt(_make_cleaned(chunks))
-    assert "[TOOL_CALL: Grep]" in prompt
+    assert "[CALL: Grep]" in prompt
     assert "config" in prompt
 
 

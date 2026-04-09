@@ -19,7 +19,8 @@ STRIP_CONTENT_TOOLS = frozenset({"Read", "Glob"})
 STRIP_MATCH_TOOLS = frozenset({"Grep"})
 
 _BASH_MAX_LINES = 20
-_USER_MAX_LEN = 200
+_USER_MAX_LEN = 100
+_ASSISTANT_MAX_LEN = 100
 
 _SEARCH_TOOLS = frozenset({"Read", "Grep", "Glob", "Bash"})
 _EDIT_TOOLS = frozenset({"Edit", "Write", "NotebookEdit"})
@@ -68,6 +69,13 @@ def _filter_messages(messages: list[Message]) -> list[Message]:
         if msg.role == "user" and len(msg.content) > _USER_MAX_LEN:
             result.append(Message(
                 role=msg.role, content=msg.content[:_USER_MAX_LEN],
+                timestamp=msg.timestamp,
+            ))
+            continue
+        # Strip assistant messages to brief context — we only care about tool sequences
+        if msg.role == "assistant" and len(msg.content) > _ASSISTANT_MAX_LEN:
+            result.append(Message(
+                role=msg.role, content=msg.content[:_ASSISTANT_MAX_LEN],
                 timestamp=msg.timestamp,
             ))
             continue

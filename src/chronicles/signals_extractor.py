@@ -9,47 +9,114 @@ from chronicles.config import LLMConfig
 from chronicles.models import CleanedTranscript, Signal, SignalsResult
 
 _SYSTEM_PROMPT = """\
-You are an agentic operations analyst. You read transcripts of AI coding agent \
-sessions and detect operational patterns — both mistakes (inefficient, wrong, \
-or costly behaviours) and efficient patterns (clever reuse, correct tool \
-selection, good strategies).
+You are analyzing an AI coding agent's TOOL USAGE BEHAVIOR. You look at the \
+sequence of tool calls and their results to find operational mistakes and \
+patterns that future agents should know about.
 
-Return ONLY valid JSON matching this schema (no markdown fences, no explanation):
+You ONLY care about what the agent DID with tools — not what it discussed, \
+designed, or built. Ignore all conversation content about architecture, design \
+decisions, or implementation details. Focus exclusively on the tool call/result \
+sequence.
+
+Return ONLY valid JSON (no markdown fences, no explanation):
 {
   "signals": [
     {
-      "pattern": "string — what happened, described concisely",
+      "pattern": "string — the tool sequence that reveals the mistake or pattern",
       "type": "mistake | efficient",
-      "rule": "string — imperative instruction for future agents, e.g. 'Use the Grep tool instead of Bash grep'",
-      "context": ["string — tags like tool:Grep, area:navigation, area:testing"],
+      "rule": "string — short imperative rule (under 100 chars)",
+      "context": ["string — tags"],
       "severity": "high | low"
     }
   ],
-  "demotions": ["string — verbatim rule text from CURRENT SIGNALS that is contradicted or obsolete"]
+  "demotions": ["string — verbatim rule text from CURRENT SIGNALS contradicted by this session"]
 }
 
-WHAT TO DETECT:
-- mistakes: using the wrong tool (e.g. Bash grep instead of Grep tool), unnecessary retries,
-  reading whole files when targeted reads suffice, ignoring available context, excessive
-  clarification loops, destructive operations without confirmation
-- efficient: correct tool selection, effective search strategies, good use of existing context,
-  parallelising independent operations, targeted edits instead of rewrites
+WHAT TO LOOK FOR in the tool call sequence:
 
-SEVERITY GUIDELINES:
-- high: wasted significant tokens/time, caused errors, or is a systematic anti-pattern
-- low: minor inefficiency or a marginal improvement opportunity
+1. WRONG COMMANDS: Agent ran a command that failed, then tried a different one that worked.
+   Example: `pytest` failed → `uv run python -m pytest` worked.
+   Signal: "Run tests with `uv run python -m pytest`, not bare `pytest`"
+
+2. WRONG TOOL: Agent used Bash to do something a dedicated tool does better.
+   Example: Bash(`grep -r foo .`) → then Grep(pattern="foo")
+   Signal: "Use Grep tool instead of Bash grep"
+
+3. WRONG PATH: Agent searched in a directory that doesn't exist or has nothing, then found \
+it elsewhere.
+   Example: Glob(pattern="test/*.py") → empty → Glob(pattern="tests/*.py") → found files
+   Signal: "Tests are in `tests/`, not `test/`"
+
+4. HALLUCINATED PATH/COMMAND: Agent tried to read/run something that doesn't exist.
+   Example: Read("src/utils.py") → "File does not exist" → Read("src/chronicles/utils.py")
+   Signal: "No `src/utils.py` — source is under `src/chronicles/`"
+
+5. WASTED RETRIES: Agent tried the same kind of operation 3+ times with variations before \
+succeeding.
+   Example: Grep("config") in root → Grep("config") in src/ → Grep("config") in src/chronicles/
+   Signal: "Config module is at `src/chronicles/config.py`"
+
+6. EFFICIENT SHORTCUT: Agent navigated directly to the right location without searching.
+   Example: Read("src/chronicles/models.py") on first try
+   Signal: "Models are in `src/chronicles/models.py`"
+
+DO NOT EMIT:
+- Anything about what was discussed, designed, or decided in conversation
+- Anything about code architecture or implementation patterns
+- Generic advice ("write tests", "plan first", "use config files")
+- Signals derived from what humans said — only from tool call/result sequences
+
+DEMOTIONS: If any CURRENT SIGNAL is contradicted by tool behavior in this session \
+(agent succeeded doing the opposite, or referenced path no longer exists), include \
+its EXACT rule text in "demotions".
 
 RULES:
-- "type" MUST be exactly one of: mistake, efficient
-- "severity" MUST be exactly one of: high, low
-- "rule" must be an imperative sentence (starts with a verb)
-- "context" tags follow the pattern "tool:ToolName" or "area:domain" (e.g. area:navigation, area:testing, area:git)
-- Only emit signals with clear evidence from the transcript
-- If no patterns are found, return {"signals": [], "demotions": []}
+- "type": mistake | efficient
+- "severity": high (caused errors/backtracking) | low (minor)
+- Aim for 0-5 signals. Zero is correct if no tool mistakes or patterns found.
+- If nothing found, return {"signals": [], "demotions": []}
 """
 
 _VALID_TYPE = {"mistake", "efficient"}
 _VALID_SEVERITY = {"high", "low"}
+
+
+def _summarize_params(tool_name: str, tool_input: dict) -> str:
+    """Show only the key parameter — enough to detect wrong paths/commands."""
+    if not tool_input:
+        return ""
+    if tool_name == "Read":
+        return tool_input.get("file_path", "")
+    if tool_name == "Write":
+        return tool_input.get("file_path", "")
+    if tool_name == "Edit":
+        return tool_input.get("file_path", "")
+    if tool_name == "Grep":
+        p = tool_input.get("pattern", "")
+        path = tool_input.get("path", "")
+        return f'pattern="{p}" path={path}' if path else f'pattern="{p}"'
+    if tool_name == "Glob":
+        return f'pattern="{tool_input.get("pattern", "")}"'
+    if tool_name == "Bash":
+        return tool_input.get("command", "")[:120]
+    return ""
+
+
+def _summarize_result(tool_name: str, content: str) -> str:
+    """Classify result as OK, EMPTY, ERROR — strip content details."""
+    if not content:
+        return "EMPTY"
+    c = content.strip().lower()
+    if "error" in c or "fail" in c or "not found" in c or "does not exist" in c:
+        return f"ERROR: {content.split(chr(10))[0][:150]}"
+    if content in ("(file content stripped)", "(match content stripped)"):
+        return "OK"
+    if tool_name == "Bash":
+        lines = content.strip().split("\n")
+        if len(lines) <= 3:
+            return content.strip()[:150]
+        return f"OK ({len(lines)} lines)"
+    return "OK"
 
 
 class SignalsExtractor:
@@ -89,15 +156,14 @@ class SignalsExtractor:
         if msg.role == "user":
             return f"[USER] {msg.content}"
         elif msg.role == "assistant":
-            return f"[ASSISTANT] {msg.content}"
+            return f"[AGENT] {msg.content}" if msg.content else ""
         elif msg.role == "tool_call":
-            detail = msg.content or json.dumps(msg.tool_input) if msg.tool_input else ""
-            return f"[TOOL_CALL: {msg.tool_name}] {detail}".rstrip()
+            params = _summarize_params(msg.tool_name, msg.tool_input)
+            return f"[CALL: {msg.tool_name}] {params}".rstrip()
         elif msg.role == "tool_result":
-            if msg.content:
-                return f"[TOOL_RESULT: {msg.tool_name}] {msg.content}"
-            return f"[TOOL_RESULT: {msg.tool_name}] (stripped)"
-        return f"[{msg.role.upper()}] {msg.content}"
+            outcome = _summarize_result(msg.tool_name, msg.content)
+            return f"[RESULT: {msg.tool_name}] {outcome}"
+        return ""
 
     def _parse_response(self, raw: str) -> SignalsResult:
         text = raw.strip()
