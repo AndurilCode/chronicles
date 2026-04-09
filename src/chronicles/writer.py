@@ -133,6 +133,38 @@ def write_wiki_pages(
             log.info("  wiki: %s (%s, confidence=%s)",
                      rel_path, data.get("type", "?"), data.get("confidence", "?"))
             count += 1
+        elif action == "resolve":
+            if not out_path.exists():
+                log.warning("Cannot resolve %s — article does not exist", rel_path)
+                continue
+            existing = out_path.read_text()
+            record_ref_link = f'"[[{record_ref}]]"'
+            supports = data.get("supports", "original")
+            evidence_text = data.get("evidence", "")
+
+            evidence_entry = (
+                f"  - record: {record_ref_link}\n"
+                f"    supports: {supports}\n"
+            )
+            if evidence_text:
+                evidence_entry += f"    evidence: {evidence_text}\n"
+
+            if "resolution_evidence:" in existing:
+                existing = existing.replace(
+                    "resolution_evidence:\n",
+                    "resolution_evidence:\n" + evidence_entry,
+                    1,
+                )
+            else:
+                existing = re.sub(
+                    r"\n---\n",
+                    f"\nresolution_evidence:\n{evidence_entry}---\n",
+                    existing,
+                    count=1,
+                )
+            out_path.write_text(existing)
+            log.info("  wiki: %s (resolve evidence, supports=%s)", rel_path, supports)
+            count += 1
     return count
 
 

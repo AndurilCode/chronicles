@@ -781,6 +781,103 @@ def _regenerate_gold(
     return len(high_articles)
 
 
+def _resolve_contested(articles: list[dict], report: LintReport) -> None:
+    """Auto-resolve contested articles when 2+ sessions support one side."""
+    today = _today()
+
+    for article in articles:
+        fm = article["frontmatter"]
+        if fm.get("confidence") != "contested":
+            continue
+
+        evidence = fm.get("resolution_evidence", []) or []
+        if len(evidence) < 2:
+            continue
+
+        support_counts: dict[str, int] = {}
+        for e in evidence:
+            side = e.get("supports", "")
+            if side:
+                support_counts[side] = support_counts.get(side, 0) + 1
+
+        winner = None
+        for side, count in support_counts.items():
+            if count >= 2:
+                winner = side
+                break
+
+        if winner is None:
+            continue
+
+        path: Path = article["path"]
+        text = article["text"]
+
+        # Restore confidence
+        text = re.sub(r"^confidence: contested", "confidence: high", text, count=1, flags=re.MULTILINE)
+        # Remove contested fields
+        text = re.sub(r"contested_by:.*\n", "", text)
+        text = re.sub(r"previous_confidence:.*\n", "", text)
+        # Remove resolution_evidence block
+        text = re.sub(r"resolution_evidence:\n(?:  - .+\n(?:    .+\n)*)*", "", text)
+
+        # Build resolution history
+        evidence_records = [e.get("record", "").strip('"') for e in evidence if e.get("supports") == winner]
+        evidence_refs = ", ".join(evidence_records)
+        history_entry = (
+            f"## Resolution History\n"
+            f"- **{today}**: Resolved in favor of {winner} ({evidence_refs})\n"
+        )
+        text = text.rstrip("\n") + "\n\n" + history_entry
+
+        path.write_text(text)
+        article["text"] = text
+        article["frontmatter"] = {**fm, "confidence": "high"}
+        report.warnings.append(f"Resolved: {path.stem} in favor of {winner}")
+
+
+def _regenerate_contested(
+    chronicles_dir: Path,
+    articles: list[dict],
+    renderer: TemplateRenderer,
+) -> int:
+    """Rebuild CONTESTED.md from all contested articles."""
+    contested_articles = [
+        a for a in articles if a["frontmatter"].get("confidence") == "contested"
+    ]
+
+    contested_data = []
+    for a in contested_articles:
+        fm = a["frontmatter"]
+        body_match = re.match(r"^---\n.*?\n---\n\s*#[^\n]*\n\n(.+?)(\n|$)", a["text"], re.DOTALL)
+        original_claim = body_match.group(1).strip().split("\n")[0] if body_match else ""
+
+        contested_by_raw = str(fm.get("contested_by", ""))
+        contested_by_match = re.search(r"\[\[([^\]]+)\]\]", contested_by_raw)
+        contested_by = contested_by_match.group(1) if contested_by_match else "unknown"
+
+        evidence = fm.get("resolution_evidence", []) or []
+        evidence_for = sum(1 for e in evidence if e.get("supports") == "original")
+        evidence_against = sum(1 for e in evidence if e.get("supports") != "original")
+
+        contested_data.append({
+            "title": a["path"].stem,
+            "original_claim": original_claim,
+            "contested_by": contested_by,
+            "contested_reason": "conflicting evidence",
+            "evidence_for": evidence_for,
+            "evidence_against": evidence_against,
+        })
+
+    contested_path = chronicles_dir / "CONTESTED.md"
+    content = renderer.render("contested", {
+        "date": _today(),
+        "count": len(contested_articles),
+        "articles": contested_data,
+    })
+    contested_path.write_text(content)
+    return len(contested_articles)
+
+
 def lint(chronicles_dir: Path) -> LintReport:
     """Main linter function.
 
@@ -822,6 +919,7 @@ def lint(chronicles_dir: Path) -> LintReport:
     _detect_contested(chronicles_dir, articles, report)
     _calibrate_confidence(articles, report)
     _infer_relationships(chronicles_dir, articles, report)
+    _resolve_contested(articles, report)
     _detect_stale(chronicles_dir, articles, report)
 
     _regenerate_categories(chronicles_dir, articles, renderer)
@@ -836,5 +934,9 @@ def lint(chronicles_dir: Path) -> LintReport:
     gold_count = _regenerate_gold(chronicles_dir, articles, renderer)
     report.gold_count = gold_count
     log.info("GOLD.md: %d high-confidence article(s)", gold_count)
+
+    contested_count = _regenerate_contested(chronicles_dir, articles, renderer)
+    if contested_count:
+        log.info("CONTESTED.md: %d contested article(s)", contested_count)
 
     return report

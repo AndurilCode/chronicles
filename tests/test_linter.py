@@ -382,3 +382,56 @@ def test_decay_skips_depends_on_targets(chronicles_dir):
 
     assert path.exists()  # NOT archived
     assert any("depended-upon" in w and "depends-on" in w for w in report.warnings)
+
+
+def test_resolve_contested_with_evidence(chronicles_dir):
+    """Contested article is resolved when 2+ sessions support one side."""
+    from unittest.mock import patch
+
+    articles_dir = chronicles_dir / "wiki" / "articles"
+    path = articles_dir / "refresh-strategy.md"
+    path.write_text(
+        "---\ntype: decision\nconfidence: contested\nsources:\n"
+        '  - "[[2026-04-01_initial]]"\n  - "[[2026-04-05_confirm]]"\n  - "[[2026-04-10_confirm2]]"\n'
+        'contested_by: "[[2026-04-15_refactor-auth]]"\n'
+        "previous_confidence: high\ntags: [auth]\n"
+        "first_seen: 2026-04-01\nlast_confirmed: 2026-04-10\n"
+        "resolution_evidence:\n"
+        '  - record: "[[2026-04-18_perf-review]]"\n'
+        "    supports: original\n"
+        '  - record: "[[2026-04-20_auth-fix]]"\n'
+        "    supports: original\n"
+        "---\n\n# Refresh Strategy\n\nRefresh before expiry.\n"
+    )
+
+    with patch("chronicles.linter._get_similarity_engine", return_value=None):
+        report = lint(chronicles_dir)
+
+    content = path.read_text()
+    assert "confidence: high" in content
+    assert "## Resolution History" in content
+    assert "Resolved in favor of original" in content
+
+
+def test_regenerate_contested_md(chronicles_dir):
+    """CONTESTED.md is regenerated from contested articles."""
+    from unittest.mock import patch
+
+    articles_dir = chronicles_dir / "wiki" / "articles"
+    (articles_dir / "some-article.md").write_text(
+        "---\ntype: decision\nconfidence: contested\nsources:\n"
+        '  - "[[2026-04-01_s1]]"\n'
+        'contested_by: "[[2026-04-15_challenge]]"\n'
+        "previous_confidence: high\ntags: [auth]\n"
+        "first_seen: 2026-04-01\nlast_confirmed: 2026-04-01\n---\n\n"
+        "# Some Article\n\nOriginal claim here.\n"
+    )
+
+    with patch("chronicles.linter._get_similarity_engine", return_value=None):
+        report = lint(chronicles_dir)
+
+    contested_md = chronicles_dir / "CONTESTED.md"
+    assert contested_md.exists()
+    content = contested_md.read_text()
+    assert "contested_count: 1" in content
+    assert "[[some-article]]" in content
