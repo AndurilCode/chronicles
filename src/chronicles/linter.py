@@ -181,7 +181,9 @@ def _detect_and_merge_duplicates(articles: list[dict], report: LintReport) -> li
                 continue
             a_tags = set(a["frontmatter"].get("tags", []))
             b_tags = set(b["frontmatter"].get("tags", []))
-            if not a_tags & b_tags:
+            shared_tags = a_tags & b_tags
+            all_tags = a_tags | b_tags
+            if not shared_tags or (len(shared_tags) / len(all_tags) < 0.5):
                 continue
             report.warnings.append(f"Merged duplicate: {b['path'].stem} into {a['path'].stem}")
             _merge_article(a, b)
@@ -233,6 +235,103 @@ def _detect_contested(chronicles_dir: Path, articles: list[dict], report: LintRe
                     article["text"] = art_content
                     article["frontmatter"]["confidence"] = "contested"
                     report.warnings.append(f"Contested: {article['path'].stem} (by {record_path.stem})")
+
+
+VALID_RELATIONSHIP_TYPES = frozenset({
+    "contradicts", "supersedes", "depends-on", "generalizes", "related-to",
+})
+
+
+def _parse_relationships(text: str) -> list[dict]:
+    """Extract relationships list from article frontmatter text."""
+    fm = _parse_frontmatter(text)
+    if fm is None:
+        return []
+    return fm.get("relationships", []) or []
+
+
+def _write_relationships(article: dict, relationships: list[dict]) -> None:
+    """Write or update the relationships block in an article's frontmatter."""
+    text = article["text"]
+    path: Path = article["path"]
+
+    # Remove existing relationships block if present
+    text = re.sub(
+        r"relationships:\n(?:  - .+\n(?:    .+\n)*)*",
+        "",
+        text,
+    )
+
+    if not relationships:
+        path.write_text(text)
+        article["text"] = text
+        return
+
+    # Build relationships YAML block
+    rel_lines = ["relationships:\n"]
+    for r in relationships:
+        rel_lines.append(f"  - type: {r['type']}\n")
+        rel_lines.append(f"    target: {r['target']}\n")
+        if r.get("source"):
+            rel_lines.append(f"    source: {r['source']}\n")
+    rel_block = "".join(rel_lines)
+
+    # Insert before closing ---
+    text = re.sub(r"\n---\n", f"\n{rel_block}---\n", text, count=1)
+
+    path.write_text(text)
+    article["text"] = text
+    article["frontmatter"]["relationships"] = relationships
+
+
+def _infer_relationships(
+    chronicles_dir: Path,
+    articles: list[dict],
+    report: LintReport,
+) -> None:
+    """Infer and write relationships between articles.
+
+    - contradicts: from contested detection results
+    - related-to: from tag overlap (replaces ## Related sections)
+    """
+    # Build tag -> article mapping for related-to inference
+    article_tags: dict[str, set[str]] = {}
+    for article in articles:
+        fm = article["frontmatter"]
+        tags = fm.get("tags", [])
+        if isinstance(tags, str):
+            tags = [tags]
+        article_tags[article["path"].stem] = set(tags)
+
+    for article in articles:
+        name = article["path"].stem
+        existing_rels = _parse_relationships(article["text"])
+        new_rels = list(existing_rels)
+        existing_targets = {(r["type"], r.get("target")) for r in existing_rels}
+
+        # Add contradicts from contested status — re-parse from text
+        # because _detect_contested may have updated the text without updating the dict
+        current_fm = _parse_frontmatter(article["text"]) or {}
+        if current_fm.get("confidence") == "contested":
+            contested_by = current_fm.get("contested_by", "")
+            match = re.search(r"\[\[([^\]]+)\]\]", str(contested_by))
+            if match:
+                target = match.group(1)
+                if ("contradicts", target) not in existing_targets:
+                    new_rels.append({"type": "contradicts", "target": target})
+
+        # Add related-to from tag overlap
+        my_tags = article_tags.get(name, set())
+        if my_tags:
+            for other_name, other_tags in article_tags.items():
+                if other_name == name:
+                    continue
+                shared = my_tags & other_tags
+                if shared and ("related-to", other_name) not in existing_targets:
+                    new_rels.append({"type": "related-to", "target": other_name})
+
+        if new_rels != existing_rels:
+            _write_relationships(article, new_rels)
 
 
 def _detect_stale(chronicles_dir: Path, articles: list[dict], report: LintReport) -> None:
@@ -471,6 +570,7 @@ def lint(chronicles_dir: Path) -> LintReport:
         log.info("Promoted %d article(s): %s", len(promotions), ", ".join(promotions))
 
     _detect_contested(chronicles_dir, articles, report)
+    _infer_relationships(chronicles_dir, articles, report)
     _detect_stale(chronicles_dir, articles, report)
 
     _regenerate_categories(chronicles_dir, articles, renderer)
