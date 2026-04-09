@@ -743,8 +743,23 @@ def _regenerate_categories(
                 except yaml.YAMLError:
                     pass
 
-    # Remove old category files
+    # Preserve existing enrichment summaries before regenerating
+    existing_summaries: dict[str, str] = {}
     for old in categories_dir.glob("*.md"):
+        content = old.read_text()
+        lines = content.split("\n")
+        past_title = False
+        summary_lines: list[str] = []
+        for line in lines:
+            if line.startswith("# "):
+                past_title = True
+                continue
+            if past_title and line.strip() and not line.startswith("-") and not line.startswith("#"):
+                summary_lines.append(line)
+            elif past_title and summary_lines and (not line.strip() or line.startswith("-") or line.startswith("#")):
+                break
+        if summary_lines:
+            existing_summaries[old.stem] = "\n".join(summary_lines)
         old.unlink()
 
     # Generate category pages only for tags with 2+ articles (or articles + queries)
@@ -765,7 +780,16 @@ def _regenerate_categories(
             "open_questions": question_list,
         }
         cat_path = categories_dir / f"{tag}.md"
-        cat_path.write_text(renderer.render("wiki_category", data))
+        content = renderer.render("wiki_category", data)
+
+        # Re-inject preserved summary if the category existed before
+        if tag in existing_summaries:
+            content = content.replace(
+                f"# {title}\n",
+                f"# {title}\n\n{existing_summaries[tag]}\n",
+                1,
+            )
+        cat_path.write_text(content)
 
 
 def _regenerate_gold(
