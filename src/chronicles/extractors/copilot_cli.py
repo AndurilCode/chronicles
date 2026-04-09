@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 import subprocess
 
-from chronicles.config import LLMConfig
 from chronicles.extractors.base import BaseExtractor
 from chronicles.models import CleanedTranscript, ExtractionResult
 
