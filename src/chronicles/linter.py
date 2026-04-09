@@ -86,6 +86,10 @@ def _load_articles(articles_dir: Path) -> tuple[list[dict], list[str]]:
         if not sources or (isinstance(sources, list) and len(sources) == 0):
             errors.append(f"{path.name}: empty 'sources' — no record references this article")
 
+        # Normalize sources — YAML parses unquoted [[x]] as nested lists
+        if isinstance(sources, list):
+            fm["sources"] = [_normalize_source(s) for s in sources]
+
         articles.append({"path": path, "frontmatter": fm, "text": text})
 
     return articles, errors
@@ -305,11 +309,29 @@ def _fallback_dedup(articles: list[dict], report: LintReport) -> list[dict]:
     return [a for i, a in enumerate(articles) if i not in merged_indices]
 
 
+def _normalize_source(source) -> str:
+    """Normalize a source entry to a string.
+
+    Sources can be strings like '"[[record]]"' or nested lists like [['record']]
+    when YAML parses unquoted [[...]] as a list. Normalize to 'record' stem.
+    """
+    if isinstance(source, list):
+        # [[record]] parsed as nested list — flatten
+        while isinstance(source, list) and source:
+            source = source[0]
+    s = str(source).strip('"')
+    # Strip wikilink brackets if present
+    match = re.search(r"\[\[([^\]]+)\]\]", s)
+    if match:
+        return match.group(1)
+    return s
+
+
 def _merge_article(target: dict, source: dict) -> None:
     target_fm = target["frontmatter"]
     source_fm = source["frontmatter"]
-    existing_sources = target_fm.get("sources", [])
-    new_sources = source_fm.get("sources", [])
+    existing_sources = [_normalize_source(s) for s in (target_fm.get("sources", []) or [])]
+    new_sources = [_normalize_source(s) for s in (source_fm.get("sources", []) or [])]
     all_sources = list(dict.fromkeys(existing_sources + new_sources))
     existing_tags = set(target_fm.get("tags", []))
     new_tags = set(source_fm.get("tags", []))
@@ -317,7 +339,7 @@ def _merge_article(target: dict, source: dict) -> None:
     content = target["text"]
     content = re.sub(
         r"sources:\n(  - .+\n)+",
-        "sources:\n" + "".join(f'  - "{s}"\n' if "[[" not in s else f"  - {s}\n" for s in all_sources),
+        "sources:\n" + "".join(f'  - "[[{s}]]"\n' for s in all_sources),
         content,
     )
     content = re.sub(r"tags: \[.+\]", f"tags: {all_tags}", content)
