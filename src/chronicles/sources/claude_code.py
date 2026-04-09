@@ -8,7 +8,7 @@ from typing import Optional
 from chronicles.models import Message, Transcript
 from chronicles.sources.base import BaseSource
 
-_CLAUDE_CODE_TYPES = {"human", "assistant", "summary"}
+_CLAUDE_CODE_TYPES = {"human", "user", "assistant", "summary", "permission-mode", "system"}
 
 # Claude Code tool names are already canonical — no remapping needed
 TOOL_NAME_MAP: dict[str, str] = {}
@@ -33,11 +33,16 @@ class ClaudeCodeSource(BaseSource):
     def sniff(self, session_path: Path) -> bool:
         try:
             with session_path.open() as f:
-                first_line = f.readline().strip()
-            if not first_line:
-                return False
-            data = json.loads(first_line)
-            return isinstance(data, dict) and data.get("type") in _CLAUDE_CODE_TYPES
+                for i, line in enumerate(f):
+                    if i >= 10:
+                        break
+                    line = line.strip()
+                    if not line:
+                        continue
+                    data = json.loads(line)
+                    if isinstance(data, dict) and data.get("type") in _CLAUDE_CODE_TYPES:
+                        return True
+            return False
         except Exception:
             return False
 
@@ -84,18 +89,22 @@ class ClaudeCodeSource(BaseSource):
 
                 event_type = event.get("type", "")
 
-                if event_type == "human":
-                    # Capture cwd from first human event
+                if event_type in ("human", "user"):
+                    # Capture cwd from first human/user event
                     if not cwd:
                         cwd = event.get("cwd", "")
                     msg_obj = event.get("message", {})
-                    content_blocks = msg_obj.get("content", [])
-                    text_parts = [
-                        b.get("text", "")
-                        for b in content_blocks
-                        if b.get("type") == "text"
-                    ]
-                    text = "\n".join(text_parts).strip()
+                    raw_content = msg_obj.get("content", "")
+                    # content can be a string or a list of content blocks
+                    if isinstance(raw_content, str):
+                        text = raw_content.strip()
+                    else:
+                        text_parts = [
+                            b.get("text", "")
+                            for b in raw_content
+                            if isinstance(b, dict) and b.get("type") == "text"
+                        ]
+                        text = "\n".join(text_parts).strip()
                     if text:
                         messages.append(Message(
                             role="user",

@@ -100,6 +100,9 @@ def write_wiki_pages(
         rel_path = instruction.get("path", "")
         data = instruction.get("data", {})
 
+        if not rel_path or not rel_path.endswith(".md"):
+            continue
+
         out_path = chronicles_dir / rel_path
         out_path.parent.mkdir(parents=True, exist_ok=True)
 

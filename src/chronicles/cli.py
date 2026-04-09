@@ -42,6 +42,26 @@ def main(argv: list[str] | None = None) -> None:
         _run_lint(args)
 
 
+def _parse_and_clean_one(args: tuple[Path, str | None]):
+    """Parse and clean a single transcript. Module-level for pickling."""
+    path, source_override = args
+    if source_override:
+        source = get_source(source_override)
+    else:
+        source = detect_source(path)
+    transcript = source.parse_session(path)
+    return clean_transcript(transcript)
+
+
+def _parse_and_clean_all(paths: list[Path], source_override: str | None):
+    """Parse and clean transcripts, using ProcessPool for multiple files."""
+    if len(paths) == 1:
+        yield _parse_and_clean_one((paths[0], source_override))
+    else:
+        with ProcessPoolExecutor() as pool:
+            yield from pool.map(_parse_and_clean_one, [(p, source_override) for p in paths])
+
+
 def _ensure_chronicles_dir(chronicles_dir: Path) -> None:
     """Bootstrap chronicles directory structure if it doesn't exist."""
     for subdir in ["records", "archives", "wiki/articles", "wiki/categories", "wiki/queries"]:
@@ -85,17 +105,8 @@ def _run_ingest(args: argparse.Namespace) -> None:
         print("No transcript files to process.", file=sys.stderr)
         sys.exit(1)
 
-    def parse_and_clean(path: Path):
-        if args.source:
-            source = get_source(args.source)
-        else:
-            source = detect_source(path)
-        transcript = source.parse_session(path)
-        cleaned = clean_transcript(transcript)
-        return cleaned
-
-    with ProcessPoolExecutor() as pool:
-        cleaned_transcripts = list(pool.map(parse_and_clean, paths))
+    source_override = args.source
+    cleaned_transcripts = list(_parse_and_clean_all(paths, source_override))
 
     with ThreadPoolExecutor(max_workers=config.llm.max_concurrent) as pool:
         results = list(pool.map(extractor.extract, cleaned_transcripts))
