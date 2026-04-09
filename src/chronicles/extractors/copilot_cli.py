@@ -133,6 +133,16 @@ class CopilotCLIExtractor(BaseExtractor):
                 data = json.loads(repaired)
             except json.JSONDecodeError as e:
                 raise RuntimeError(f"Failed to parse LLM JSON: {e}\nResponse: {text[:500]}") from e
+        _REQUIRED_KEYS = [
+            "branch", "status", "tags", "duration", "files_changed",
+            "objective", "outcome", "decisions", "problems", "discovered",
+            "continuity", "wiki_instructions",
+        ]
+        missing = [k for k in _REQUIRED_KEYS if k not in data]
+        if missing:
+            raise RuntimeError(
+                f"LLM response missing required fields: {', '.join(missing)}"
+            )
         return ExtractionResult(
             branch=data["branch"],
             status=data["status"],
@@ -154,11 +164,7 @@ class CopilotCLIExtractor(BaseExtractor):
         import re
         # Remove trailing commas before ] or }
         text = re.sub(r",\s*([}\]])", r"\1", text)
-        # Fix unescaped newlines inside string values
-        # Replace actual newlines inside strings with \n
-        lines = text.split("\n")
-        repaired = "\n".join(lines)
-        return repaired
+        return text
 
     def extract(
         self,

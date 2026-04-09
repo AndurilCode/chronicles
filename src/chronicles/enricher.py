@@ -131,11 +131,14 @@ def _collect_article_summaries(category_content: str, articles_dir: Path) -> lis
         art_text = article_path.read_text()
         art_title = article_name
         art_summary = ""
+        fm_delimiters_seen = 0
         past_fm = False
         past_title = False
         for line in art_text.split("\n"):
-            if line.strip() == "---":
-                past_fm = not past_fm
+            if line.strip() == "---" and fm_delimiters_seen < 2:
+                fm_delimiters_seen += 1
+                if fm_delimiters_seen == 2:
+                    past_fm = True
                 continue
             if past_fm and line.startswith("# "):
                 art_title = line[2:].strip()

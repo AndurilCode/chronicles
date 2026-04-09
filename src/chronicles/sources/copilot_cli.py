@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -94,7 +94,7 @@ class CopilotCLISource(BaseSource):
         paths = []
         for events_file in sorted(base.rglob("events.jsonl")):
             if since is not None:
-                if datetime.fromtimestamp(events_file.stat().st_mtime) < since:
+                if datetime.fromtimestamp(events_file.stat().st_mtime, tz=timezone.utc) < since:
                     continue
             paths.append(events_file)
         return paths

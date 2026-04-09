@@ -42,7 +42,7 @@ def test_parses_llm_json_response():
     assert result.branch == "fix/bug"
     assert result.status == "complete"
 
-@patch("subprocess.run")
+@patch("chronicles.extractors.copilot_cli.subprocess.run")
 def test_extract_calls_copilot(mock_run):
     mock_run.return_value = MagicMock(
         returncode=0,

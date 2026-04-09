@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import functools
 import logging
 import sys
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
@@ -185,10 +186,8 @@ def _run_ingest(args: argparse.Namespace) -> None:
 
     log.info("Extracting via %s (model: %s)...", config.llm.provider, config.llm.model)
     with ThreadPoolExecutor(max_workers=config.llm.max_concurrent) as pool:
-        results = list(pool.map(
-            lambda ct: extractor.extract(ct, wiki_context),
-            cleaned_transcripts,
-        ))
+        extract_fn = functools.partial(extractor.extract, wiki_context=wiki_context)
+        results = list(pool.map(extract_fn, cleaned_transcripts))
 
     # Check for already-ingested sessions (idempotency)
     existing_records = {p.stem for p in (chronicles_dir / "records").glob("*.md")}

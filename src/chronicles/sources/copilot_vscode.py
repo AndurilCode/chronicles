@@ -55,7 +55,7 @@ class CopilotVSCodeSource(BaseSource):
         if since is not None:
             paths = [
                 p for p in paths
-                if datetime.fromtimestamp(p.stat().st_mtime) >= since
+                if datetime.fromtimestamp(p.stat().st_mtime, tz=timezone.utc) >= since
             ]
         return paths
 

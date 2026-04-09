@@ -75,4 +75,4 @@ class ExtractionResult:
 
     @property
     def slug(self) -> str:
-        return self.branch.replace("/", "-")
+        return self.branch.replace("/", "-").replace("\\", "-")

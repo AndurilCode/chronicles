@@ -7,7 +7,7 @@ from typing import Any
 from jinja2 import Environment, FileSystemLoader
 
 # Default templates ship with the package
-_DEFAULT_TEMPLATE_DIR = Path(__file__).resolve().parent.parent.parent / "templates"
+_DEFAULT_TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 
 
 class TemplateRenderer:

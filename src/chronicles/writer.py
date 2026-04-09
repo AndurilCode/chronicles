@@ -175,13 +175,12 @@ def _template_name_from_path(rel_path: str) -> str:
     #      wiki/queries/foo.md -> wiki_query
     if len(parts) >= 2:
         folder = parts[-2]  # articles, categories, queries
-        folder_singular = folder.rstrip("s")  # articles -> article, queries -> query
         if folder == "categories":
             folder_singular = "category"
         elif folder == "queries":
             folder_singular = "query"
-        elif folder == "articles":
-            folder_singular = "article"
+        else:
+            folder_singular = folder.rstrip("s")
         return f"wiki_{folder_singular}"
     return "wiki_article"
 

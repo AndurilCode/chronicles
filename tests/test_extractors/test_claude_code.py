@@ -18,7 +18,7 @@ def _make_cleaned_transcript() -> CleanedTranscript:
     ]
     return CleanedTranscript(metadata=meta, chunks=[messages])
 
-@patch("subprocess.run")
+@patch("chronicles.extractors.claude_code.subprocess.run")
 def test_extract_calls_claude(mock_run):
     mock_run.return_value = MagicMock(
         returncode=0,

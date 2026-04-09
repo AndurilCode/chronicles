@@ -1,7 +1,7 @@
 """Claude Code source adapter."""
 from __future__ import annotations
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -54,7 +54,7 @@ class ClaudeCodeSource(BaseSource):
         if since is not None:
             paths = [
                 p for p in paths
-                if datetime.fromtimestamp(p.stat().st_mtime) >= since
+                if datetime.fromtimestamp(p.stat().st_mtime, tz=timezone.utc) >= since
             ]
         return paths
 
