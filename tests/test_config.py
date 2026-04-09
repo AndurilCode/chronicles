@@ -1,7 +1,5 @@
 """Tests for config loading."""
-from pathlib import Path
-
-from chronicles.config import load_config, ChroniclesConfig
+from chronicles.config import load_config
 
 
 def test_load_config_from_file(chronicles_dir):
