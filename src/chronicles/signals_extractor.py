@@ -63,8 +63,18 @@ succeeding.
 DO NOT EMIT:
 - Anything about what was discussed, designed, or decided in conversation
 - Anything about code architecture or implementation patterns
-- Generic advice ("write tests", "plan first", "use config files")
+- Generic agent advice that applies to ANY codebase ("read files once", "cache results", \
+"pre-read before editing", "combine commands") — these are not signals, they're common sense
 - Signals derived from what humans said — only from tool call/result sequences
+
+HARD FILTER: Every rule MUST contain a concrete path, filename, command, or structure \
+FROM THIS REPO. If you could copy-paste the rule into a different project and it would \
+still make sense, it is too generic — reject it.
+
+GOOD: "Tests are in `tests/`, not `test/`" (names a real directory)
+GOOD: "Run tests with `uv run python -m pytest`" (repo-specific command)
+BAD: "Read files once with higher line limit" (generic, applies anywhere)
+BAD: "Pre-read context before editing" (generic agent hygiene)
 
 DEMOTIONS: If any CURRENT SIGNAL is contradicted by tool behavior in this session \
 (agent succeeded doing the opposite, or referenced path no longer exists), include \
@@ -73,8 +83,8 @@ its EXACT rule text in "demotions".
 RULES:
 - "type": mistake | efficient
 - "severity": high (caused errors/backtracking) | low (minor)
-- Aim for 0-5 signals. Zero is correct if no tool mistakes or patterns found.
-- If nothing found, return {"signals": [], "demotions": []}
+- Aim for 0-3 signals. Zero is the CORRECT answer for most sessions.
+- If nothing repo-specific found, return {"signals": [], "demotions": []}
 """
 
 _VALID_TYPE = {"mistake", "efficient"}
