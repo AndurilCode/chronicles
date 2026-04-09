@@ -101,3 +101,33 @@ def test_lint_no_merge_for_different_topics(chronicles_dir):
     report = lint(chronicles_dir)
     articles = list((chronicles_dir / "wiki" / "articles").glob("*.md"))
     assert len(articles) == 2
+
+
+def test_lint_marks_contested(chronicles_dir):
+    path = chronicles_dir / "wiki" / "articles" / "old-convention.md"
+    path.write_text(
+        "---\ntype: convention\nconfidence: high\n"
+        'sources:\n  - "[[2026-03-01_session-a]]"\n  - "[[2026-03-10_session-b]]"\n'
+        "  - \"[[2026-03-20_session-c]]\"\n"
+        "first_seen: 2026-03-01\nlast_confirmed: 2026-03-20\n"
+        "tags: [test]\n---\n\n# old-convention\n\nUse snake_case.\n"
+    )
+    record = chronicles_dir / "records" / "2026-04-05_refactor.md"
+    record.write_text(
+        "---\ndate: 2026-04-05\nbranch: refactor\nstatus: complete\ntags: [test]\n"
+        "agent: claude-code\nduration: 10min\nfiles_changed:\n  - src/a.py\n---\n\n"
+        "# refactor\n\n## Discovered\n"
+        "- [convention] Use camelCase, not snake_case — contradicts [[old-convention]]\n"
+    )
+    report = lint(chronicles_dir)
+    content = path.read_text()
+    assert "confidence: contested" in content
+    assert "previous_confidence: high" in content
+
+
+def test_lint_flags_stale_articles(chronicles_dir):
+    _write_article(chronicles_dir, "stale-article",
+                   confidence="high",
+                   sources=["2025-01-01_ancient"])
+    report = lint(chronicles_dir)
+    assert any("stale" in w.lower() for w in report.warnings)

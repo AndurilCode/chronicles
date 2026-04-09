@@ -198,6 +198,57 @@ def _merge_article(target: dict, source: dict) -> None:
     target["frontmatter"]["tags"] = all_tags
 
 
+def _detect_contested(chronicles_dir: Path, articles: list[dict], report: LintReport) -> None:
+    records_dir = chronicles_dir / "records"
+    if not records_dir.exists():
+        return
+    for record_path in records_dir.glob("*.md"):
+        content = record_path.read_text()
+        contradicts_re = re.compile(r"contradicts?\s+\[\[([^\]]+)\]\]", re.IGNORECASE)
+        for match in contradicts_re.finditer(content):
+            target_name = match.group(1).strip()
+            for article in articles:
+                if article["path"].stem == target_name and article["frontmatter"].get("confidence") == "high":
+                    art_content = article["text"]
+                    art_content = art_content.replace(
+                        "confidence: high",
+                        'confidence: contested\ncontested_by: "[[' + record_path.stem + ']]"\nprevious_confidence: high',
+                        1,
+                    )
+                    article["path"].write_text(art_content)
+                    article["text"] = art_content
+                    article["frontmatter"]["confidence"] = "contested"
+                    report.warnings.append(f"Contested: {article['path'].stem} (by {record_path.stem})")
+
+
+def _detect_stale(chronicles_dir: Path, articles: list[dict], report: LintReport) -> None:
+    records_dir = chronicles_dir / "records"
+    if not records_dir.exists():
+        return
+    all_references: set[str] = set()
+    wikilink_re = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]+)?\]\]")
+    for record_path in records_dir.glob("*.md"):
+        content = record_path.read_text()
+        for match in wikilink_re.finditer(content):
+            all_references.add(match.group(1).strip())
+    for article in articles:
+        if article["frontmatter"].get("confidence") != "high":
+            continue
+        sources = article["frontmatter"].get("sources", [])
+        has_recent = False
+        for source in sources:
+            source_match = re.search(r"\[\[([^\]]+)\]\]", str(source))
+            if source_match:
+                stem = source_match.group(1)
+                if (records_dir / f"{stem}.md").exists():
+                    has_recent = True
+                    break
+        if not has_recent and article["path"].stem not in all_references:
+            report.warnings.append(
+                f"Stale high-confidence article: {article['path'].stem} (no active records reference it)"
+            )
+
+
 def _regenerate_gold(
     chronicles_dir: Path,
     articles: list[dict],
@@ -277,6 +328,9 @@ def lint(chronicles_dir: Path) -> LintReport:
 
     promotions = _manage_confidence(articles, config.confidence.promotion_threshold)
     report.promotions.extend(promotions)
+
+    _detect_contested(chronicles_dir, articles, report)
+    _detect_stale(chronicles_dir, articles, report)
 
     gold_count = _regenerate_gold(chronicles_dir, articles, renderer)
     report.gold_count = gold_count
