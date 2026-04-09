@@ -148,6 +148,7 @@ def test_ingest_with_relationships(chronicles_dir):
         args.paths = [fixture]
         args.source = "claude-code"
         args.since = None
+        args.last = None
         args.chronicles_dir = chronicles_dir
         args.no_enrich = True
 

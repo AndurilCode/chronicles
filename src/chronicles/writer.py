@@ -31,9 +31,11 @@ def write_record(
     source: str,
     date: str,
     renderer: TemplateRenderer,
+    session_id: str = "",
 ) -> Path:
-    """Render and write a session record to records/YYYY-MM-DD_slug.md."""
-    filename = f"{date}_{result.slug}.md"
+    """Render and write a session record to records/YYYY-MM-DD_SESSION-SHORT_slug.md."""
+    session_short = session_id[:8] if session_id else "unknown"
+    filename = f"{date}_{session_short}_{result.slug}.md"
     out_path = chronicles_dir / "records" / filename
 
     content = renderer.render(

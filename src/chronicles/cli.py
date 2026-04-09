@@ -195,25 +195,32 @@ def _run_ingest(args: argparse.Namespace) -> None:
         extract_fn = functools.partial(extractor.extract, wiki_context=wiki_context)
         results = list(pool.map(extract_fn, cleaned_transcripts))
 
-    # Check for already-ingested sessions (idempotency)
-    existing_records = {p.stem for p in (chronicles_dir / "records").glob("*.md")}
+    # Index existing records by session_id for idempotency
+    existing_records = {}
+    for p in (chronicles_dir / "records").glob("*.md"):
+        # Filename format: YYYY-MM-DD_SESSION-ID-SHORT_slug.md
+        parts = p.stem.split("_", 2)
+        if len(parts) >= 2:
+            existing_records[parts[1]] = p
 
     written = 0
     for cleaned, result in zip(cleaned_transcripts, results):
         date_str = cleaned.metadata.timestamp_start[:10]
         source_key = cleaned.metadata.source
-        record_stem = f"{date_str}_{result.slug}"
+        session_short = cleaned.metadata.session_id[:8]
 
-        if record_stem in existing_records:
-            log.info("Skipping %s (already ingested)", record_stem)
-            continue
+        if session_short in existing_records:
+            old_record = existing_records[session_short]
+            log.info("Replacing %s (resumed session)", old_record.name)
+            old_record.unlink()
 
         log.info("Extracted: branch=%s, status=%s, %d decisions, %d problems, %d discovered, %d wiki articles",
                  result.branch, result.status,
                  len(result.decisions), len(result.problems),
                  len(result.discovered), len(result.wiki_instructions))
 
-        record_path = write_record(chronicles_dir, result, source_key, date_str, renderer)
+        record_path = write_record(chronicles_dir, result, source_key, date_str, renderer,
+                                   session_id=cleaned.metadata.session_id)
         log.info("Wrote record: %s", record_path.relative_to(chronicles_dir))
 
         append_chronicles_entry(chronicles_dir, result, date_str, renderer)
