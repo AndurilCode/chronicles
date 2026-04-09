@@ -1,0 +1,27 @@
+{
+  "version": 2,
+  "sessions": [
+    {
+      "sessionId": "vscode-session-001",
+      "requests": [
+        {
+          "message": {"text": "Fix the bug in auth.py"},
+          "timestamp": 1744192800000,
+          "result": {
+            "value": "I see a typo. Let me fix it.\nFixed the typo.",
+            "metadata": {
+              "toolCallRounds": [
+                {
+                  "toolCalls": [
+                    {"name": "readFile", "input": {"path": "src/auth.py"}},
+                    {"name": "editFile", "input": {"path": "src/auth.py", "oldText": "pasword", "newText": "password"}}
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
