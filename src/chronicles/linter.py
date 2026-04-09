@@ -67,12 +67,23 @@ def _load_articles(articles_dir: Path) -> tuple[list[dict], list[str]]:
     if not articles_dir.exists():
         return articles, errors
 
+    required_fields = ["type", "confidence"]
+
     for path in sorted(articles_dir.glob("*.md")):
         text = path.read_text()
         fm = _parse_frontmatter(text)
         if fm is None:
             errors.append(f"{path.name}: missing or invalid frontmatter")
             continue
+
+        for field_name in required_fields:
+            if not fm.get(field_name):
+                errors.append(f"{path.name}: missing required field '{field_name}'")
+
+        sources = fm.get("sources")
+        if not sources or (isinstance(sources, list) and len(sources) == 0):
+            errors.append(f"{path.name}: empty 'sources' — no record references this article")
+
         articles.append({"path": path, "frontmatter": fm, "text": text})
 
     return articles, errors

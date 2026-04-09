@@ -101,6 +101,7 @@ def write_wiki_pages(
 
     Returns the number of pages written.
     """
+    record_ref = f"{date}_{result.slug}"
     count = 0
     for instruction in result.wiki_instructions:
         action = instruction.get("action", "create")
@@ -115,6 +116,12 @@ def write_wiki_pages(
         out_path.parent.mkdir(parents=True, exist_ok=True)
 
         template_name = _template_name_from_path(rel_path)
+
+        # Inject record reference into sources if not already present
+        if not data.get("sources"):
+            data["sources"] = [record_ref]
+        elif record_ref not in data["sources"]:
+            data["sources"].append(record_ref)
 
         # Build template context with defaults for required fields
         context = _build_wiki_context(data, date)
