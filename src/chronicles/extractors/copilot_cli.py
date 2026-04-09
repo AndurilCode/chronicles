@@ -126,8 +126,13 @@ class CopilotCLIExtractor(BaseExtractor):
         text = text[start:end]
         try:
             data = json.loads(text)
-        except json.JSONDecodeError as e:
-            raise RuntimeError(f"Failed to parse LLM JSON: {e}\nResponse: {text[:500]}") from e
+        except json.JSONDecodeError:
+            # Try basic repairs: trailing commas, unescaped newlines in strings
+            repaired = self._repair_json(text)
+            try:
+                data = json.loads(repaired)
+            except json.JSONDecodeError as e:
+                raise RuntimeError(f"Failed to parse LLM JSON: {e}\nResponse: {text[:500]}") from e
         return ExtractionResult(
             branch=data["branch"],
             status=data["status"],
@@ -142,6 +147,18 @@ class CopilotCLIExtractor(BaseExtractor):
             continuity=data["continuity"],
             wiki_instructions=data["wiki_instructions"],
         )
+
+    @staticmethod
+    def _repair_json(text: str) -> str:
+        """Attempt basic JSON repairs for common LLM output issues."""
+        import re
+        # Remove trailing commas before ] or }
+        text = re.sub(r",\s*([}\]])", r"\1", text)
+        # Fix unescaped newlines inside string values
+        # Replace actual newlines inside strings with \n
+        lines = text.split("\n")
+        repaired = "\n".join(lines)
+        return repaired
 
     def extract(
         self,

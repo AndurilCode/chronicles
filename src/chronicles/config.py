@@ -25,11 +25,17 @@ class ArchiveConfig:
 
 
 @dataclass
+class EnrichConfig:
+    enabled: bool = True
+
+
+@dataclass
 class ChroniclesConfig:
     llm: LLMConfig
     sources: list[str]
     confidence: ConfidenceConfig
     archive: ArchiveConfig
+    enrich: EnrichConfig
     chronicles_dir: Path
 
 
@@ -60,10 +66,16 @@ def load_config(chronicles_dir: Path) -> ChroniclesConfig:
         after_days=arch_raw.get("after_days", 90),
     )
 
+    enrich_raw = raw.get("enrich", {})
+    enrich = EnrichConfig(
+        enabled=enrich_raw.get("enabled", True),
+    )
+
     return ChroniclesConfig(
         llm=llm,
         sources=sources,
         confidence=confidence,
         archive=archive,
+        enrich=enrich,
         chronicles_dir=chronicles_dir,
     )

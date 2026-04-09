@@ -10,6 +10,7 @@ from pathlib import Path
 
 from chronicles.config import load_config
 from chronicles.cleaner import clean_transcript
+from chronicles.enricher import enrich
 from chronicles.extractors import get_extractor
 from chronicles.linter import lint
 from chronicles.sources import detect_source, get_source, ALL_SOURCES
@@ -32,10 +33,16 @@ def main(argv: list[str] | None = None) -> None:
     ingest_p.add_argument("--since", type=str, default=None, help="Discover sessions since Nd (e.g. 7d)")
     ingest_p.add_argument("--chronicles-dir", type=Path, default=Path("chronicles"),
                           help="Path to chronicles directory")
+    ingest_p.add_argument("--no-enrich", action="store_true",
+                          help="Skip the enrich step after ingestion")
 
     lint_p = sub.add_parser("lint", help="Validate wiki, manage confidence, regenerate GOLD.md")
     lint_p.add_argument("--chronicles-dir", type=Path, default=Path("chronicles"),
                         help="Path to chronicles directory")
+
+    enrich_p = sub.add_parser("enrich", help="LLM-powered wiki enrichment (category summaries)")
+    enrich_p.add_argument("--chronicles-dir", type=Path, default=Path("chronicles"),
+                          help="Path to chronicles directory")
 
     args = parser.parse_args(argv)
 
@@ -48,6 +55,8 @@ def main(argv: list[str] | None = None) -> None:
         _run_ingest(args)
     elif args.command == "lint":
         _run_lint(args)
+    elif args.command == "enrich":
+        _run_enrich(args)
 
 
 def _parse_and_clean_one(args: tuple[Path, str | None]):
@@ -213,11 +222,29 @@ def _run_ingest(args: argparse.Namespace) -> None:
              written, len(results) - written)
     _run_lint_internal(chronicles_dir)
 
+    # Chain enrich unless disabled
+    skip_enrich = args.no_enrich or not config.enrich.enabled
+    if not skip_enrich and written > 0:
+        _run_enrich_internal(chronicles_dir, config)
+
 
 def _run_lint(args: argparse.Namespace) -> None:
     chronicles_dir = args.chronicles_dir.resolve()
     _ensure_chronicles_dir(chronicles_dir)
     _run_lint_internal(chronicles_dir)
+
+
+def _run_enrich(args: argparse.Namespace) -> None:
+    chronicles_dir = args.chronicles_dir.resolve()
+    _ensure_chronicles_dir(chronicles_dir)
+    config = load_config(chronicles_dir)
+    _run_enrich_internal(chronicles_dir, config)
+
+
+def _run_enrich_internal(chronicles_dir: Path, config) -> None:
+    log.info("Enriching wiki...")
+    count = enrich(chronicles_dir, config)
+    log.info("Enriched %d item(s)", count)
 
 
 def _run_lint_internal(chronicles_dir: Path) -> None:
