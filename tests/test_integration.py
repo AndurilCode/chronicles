@@ -163,3 +163,63 @@ def test_ingest_with_relationships(chronicles_dir):
 
     # Verify related-to was inferred by linter (both articles share "auth" tag)
     assert "type: related-to" in content
+
+
+def test_conflict_resolution_lifecycle(chronicles_dir):
+    """Full lifecycle: article promoted -> contested -> evidence gathered -> resolved."""
+    from unittest.mock import patch
+    from chronicles.linter import lint
+
+    articles_dir = chronicles_dir / "wiki" / "articles"
+    records_dir = chronicles_dir / "records"
+
+    # Step 1: Create a high-confidence article
+    (articles_dir / "auth-pattern.md").write_text(
+        "---\ntype: pattern\nconfidence: high\nsources:\n"
+        '  - "[[2026-04-01_s1]]"\n  - "[[2026-04-02_s2]]"\n  - "[[2026-04-03_s3]]"\n'
+        "tags: [auth]\nfirst_seen: 2026-04-01\nlast_confirmed: 2026-04-03\n---\n\n"
+        "# Auth Pattern\n\nUse refresh-before-expiry.\n"
+    )
+
+    # Step 2: Create a record that contests it
+    (records_dir / "2026-04-10_challenge.md").write_text(
+        "---\ndate: 2026-04-10\n---\n\n# Challenge\n\n"
+        "This contradicts [[auth-pattern]].\n"
+    )
+
+    # Run lint — should mark as contested
+    with patch("chronicles.linter._get_similarity_engine", return_value=None):
+        report = lint(chronicles_dir)
+
+    content = (articles_dir / "auth-pattern.md").read_text()
+    assert "confidence: contested" in content
+    assert (chronicles_dir / "CONTESTED.md").exists()
+    contested_md = (chronicles_dir / "CONTESTED.md").read_text()
+    assert "auth-pattern" in contested_md
+
+    # Step 3: Add resolution evidence (simulating what the writer would do)
+    text = (articles_dir / "auth-pattern.md").read_text()
+    text = text.replace(
+        "\n---\n",
+        "\nresolution_evidence:\n"
+        '  - record: "[[2026-04-12_evidence1]]"\n'
+        "    supports: original\n"
+        '  - record: "[[2026-04-14_evidence2]]"\n'
+        "    supports: original\n"
+        "---\n",
+        1,
+    )
+    (articles_dir / "auth-pattern.md").write_text(text)
+
+    # Run lint again — should resolve
+    with patch("chronicles.linter._get_similarity_engine", return_value=None):
+        report2 = lint(chronicles_dir)
+
+    content = (articles_dir / "auth-pattern.md").read_text()
+    assert "confidence: high" in content
+    assert "## Resolution History" in content
+    assert "Resolved in favor of original" in content
+
+    # CONTESTED.md should now be empty
+    contested_md = (chronicles_dir / "CONTESTED.md").read_text()
+    assert "contested_count: 0" in contested_md
