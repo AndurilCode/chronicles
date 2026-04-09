@@ -8,6 +8,11 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/gold-context.sh\"",
             "timeout": 10000
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/signals-context.sh\"",
+            "timeout": 10000
           }
         ]
       }
@@ -19,6 +24,11 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/ingest.sh\"",
+            "timeout": 600000
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/signals-ingest.sh\"",
             "timeout": 600000
           }
         ]
