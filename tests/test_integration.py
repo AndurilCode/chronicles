@@ -83,3 +83,82 @@ def test_lint_standalone(chronicles_dir):
     """Lint command runs without errors on empty chronicles."""
     main(["lint", "--chronicles-dir", str(chronicles_dir)])
     # Should not raise
+
+
+def test_ingest_with_relationships(chronicles_dir):
+    """Full pipeline: extractor returns relationships, writer persists them, linter infers more."""
+    from unittest.mock import patch, MagicMock
+    import json
+    from chronicles.cli import _run_ingest
+
+    # Create a pre-existing article for the relationship target
+    articles_dir = chronicles_dir / "wiki" / "articles"
+    articles_dir.mkdir(parents=True, exist_ok=True)
+    (articles_dir / "old-pattern.md").write_text(
+        "---\ntype: pattern\nconfidence: medium\nsources:\n"
+        '  - "[[2026-03-01_initial]]"\n  - "[[2026-03-15_confirm]]"\n'
+        "tags: [auth, legacy]\nfirst_seen: 2026-03-01\nlast_confirmed: 2026-03-15\n---\n\n"
+        "# Old Pattern\n\nThe old way.\n\n## Evidence\n- evidence\n\n## Implications\n- implication\n"
+    )
+
+    # Write a fixture transcript
+    fixture = chronicles_dir.parent / "session.jsonl"
+    fixture.write_text(
+        '{"type":"human","timestamp":"2026-04-09T10:00:00Z","message":{"content":"update the pattern"}}\n'
+        '{"type":"assistant","timestamp":"2026-04-09T10:01:00Z","message":{"content":[{"type":"text","text":"Done."}]}}\n'
+    )
+
+    extractor_response = json.dumps({
+        "branch": "feat/new-pattern",
+        "status": "complete",
+        "tags": ["auth"],
+        "duration": "10min",
+        "files_changed": ["src/auth.py"],
+        "objective": "Update pattern",
+        "outcome": "Pattern updated",
+        "decisions": [],
+        "problems": [],
+        "discovered": [],
+        "continuity": {"unfinished": [], "open_questions": [], "next": []},
+        "wiki_instructions": [{
+            "action": "create",
+            "path": "wiki/articles/new-pattern.md",
+            "data": {
+                "title": "New Pattern",
+                "type": "pattern",
+                "confidence": "medium",
+                "tags": ["auth", "modern"],
+                "body": "The new way of doing things.",
+                "evidence": ["From this session"],
+                "implications": ["Use new pattern"],
+            },
+            "relationships": [
+                {"type": "supersedes", "target": "old-pattern"}
+            ],
+        }],
+    })
+
+    with patch("chronicles.extractors.copilot_cli.subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(
+            returncode=0, stdout=extractor_response, stderr=""
+        )
+
+        args = MagicMock()
+        args.paths = [fixture]
+        args.source = "claude-code"
+        args.since = None
+        args.chronicles_dir = chronicles_dir
+        args.no_enrich = True
+
+        _run_ingest(args)
+
+    # Verify the new article was written with relationships
+    new_article = articles_dir / "new-pattern.md"
+    assert new_article.exists()
+    content = new_article.read_text()
+    assert "relationships:" in content
+    assert "type: supersedes" in content
+    assert "target: old-pattern" in content
+
+    # Verify related-to was inferred by linter (both articles share "auth" tag)
+    assert "type: related-to" in content
