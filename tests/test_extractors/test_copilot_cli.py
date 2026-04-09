@@ -65,6 +65,70 @@ def test_extract_calls_copilot(mock_run):
     assert "copilot" in cmd[0]
     assert "--model" in cmd
 
+def test_prompt_includes_few_shot_example():
+    config = LLMConfig(provider="copilot-cli", model="gpt-5-mini")
+    extractor = CopilotCLIExtractor(config)
+    transcript = _make_cleaned_transcript()
+    prompt = extractor._build_prompt(transcript)
+    assert "EXAMPLE OUTPUT" in prompt
+    assert "scope-delimiter-trap" in prompt
+
+
+def test_normalizes_status_enum():
+    config = LLMConfig(provider="copilot-cli", model="gpt-5-mini")
+    extractor = CopilotCLIExtractor(config)
+    raw_json = json.dumps({
+        "branch": "fix/bug", "status": "Completed", "tags": ["bugfix"],
+        "duration": "5min", "files_changed": ["src/auth.py"],
+        "objective": "Fix", "outcome": "Fixed",
+        "decisions": [], "problems": [], "discovered": [],
+        "continuity": {"unfinished": [], "open_questions": [], "next": []},
+        "wiki_instructions": [],
+    })
+    result = extractor._parse_response(raw_json)
+    assert result.status == "complete"
+
+
+def test_normalizes_article_type_and_confidence():
+    config = LLMConfig(provider="copilot-cli", model="gpt-5-mini")
+    extractor = CopilotCLIExtractor(config)
+    raw_json = json.dumps({
+        "branch": "fix/bug", "status": "complete", "tags": [],
+        "duration": "5min", "files_changed": [],
+        "objective": "Fix", "outcome": "Fixed",
+        "decisions": [], "problems": [], "discovered": [],
+        "continuity": {"unfinished": [], "open_questions": [], "next": []},
+        "wiki_instructions": [{
+            "action": "create",
+            "path": "wiki/articles/test.md",
+            "data": {
+                "title": "Test", "type": "Convention", "confidence": "High",
+                "tags": ["test"], "body": "Test.", "evidence": ["e"], "implications": ["i"],
+            },
+        }],
+    })
+    result = extractor._parse_response(raw_json)
+    instr = result.wiki_instructions[0]
+    assert instr["data"]["type"] == "convention"
+    assert instr["data"]["confidence"] == "low"  # "High" not in valid set, falls to "low"
+
+
+def test_ensures_list_fields():
+    config = LLMConfig(provider="copilot-cli", model="gpt-5-mini")
+    extractor = CopilotCLIExtractor(config)
+    raw_json = json.dumps({
+        "branch": "fix/bug", "status": "complete", "tags": "single-tag",
+        "duration": "5min", "files_changed": "single-file.py",
+        "objective": "Fix", "outcome": "Fixed",
+        "decisions": [], "problems": [], "discovered": [],
+        "continuity": {"unfinished": [], "open_questions": [], "next": []},
+        "wiki_instructions": [],
+    })
+    result = extractor._parse_response(raw_json)
+    assert result.tags == ["single-tag"]
+    assert result.files_changed == ["single-file.py"]
+
+
 def test_prompt_includes_contested_context():
     config = LLMConfig(provider="copilot-cli", model="gpt-5-mini")
     extractor = CopilotCLIExtractor(config)
