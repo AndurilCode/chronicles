@@ -14,6 +14,9 @@ from chronicles.cleaner import clean_transcript
 from chronicles.enricher import enrich
 from chronicles.extractors import get_extractor
 from chronicles.linter import lint
+from chronicles.signals_cleaner import clean_transcript_for_signals
+from chronicles.signals_extractor import SignalsExtractor
+from chronicles.signals_writer import update_signals_file, load_active_signals
 from chronicles.sources import detect_source, get_source, ALL_SOURCES
 from chronicles.templates import TemplateRenderer
 from chronicles.writer import write_record, append_chronicles_entry, write_wiki_pages
@@ -47,6 +50,15 @@ def main(argv: list[str] | None = None) -> None:
     enrich_p.add_argument("--chronicles-dir", type=Path, default=Path("chronicles"),
                           help="Path to chronicles directory")
 
+    signals_p = sub.add_parser("signals", help="Extract agentic operational signals")
+    signals_p.add_argument("paths", nargs="*", type=Path, help="Transcript file paths")
+    signals_p.add_argument("--source", type=str, default=None, help="Force source type")
+    signals_p.add_argument("--since", type=str, default=None, help="Discover sessions since Nd")
+    signals_p.add_argument("--chronicles-dir", type=Path, default=Path("chronicles"),
+                          help="Path to chronicles directory")
+    signals_p.add_argument("--last", type=int, default=None, metavar="N",
+                          help="Only process the N most recent discovered sessions")
+
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -60,6 +72,8 @@ def main(argv: list[str] | None = None) -> None:
         _run_lint(args)
     elif args.command == "enrich":
         _run_enrich(args)
+    elif args.command == "signals":
+        _run_signals(args)
 
 
 def _parse_and_clean_one(args: tuple[Path, str | None]):
@@ -269,6 +283,61 @@ def _run_lint_internal(chronicles_dir: Path) -> None:
     if report.warnings:
         for w in report.warnings:
             log.warning("  %s", w)
+
+
+def _run_signals(args: argparse.Namespace) -> None:
+    chronicles_dir = args.chronicles_dir.resolve()
+    _ensure_chronicles_dir(chronicles_dir)
+    config = load_config(chronicles_dir)
+
+    paths: list[Path] = list(args.paths) if args.paths else []
+
+    if args.since:
+        days = int(args.since.rstrip("d"))
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        for source in ALL_SOURCES:
+            if source.key in config.sources and source.available():
+                paths.extend(source.discover_sessions(since=cutoff))
+
+    if args.last is not None and paths:
+        paths = sorted(paths, key=lambda p: p.stat().st_mtime)[-args.last:]
+
+    if not paths:
+        print("No transcript files to process.", file=sys.stderr)
+        sys.exit(1)
+
+    log.info("Processing %d transcript(s) for signals", len(paths))
+
+    signals_path = chronicles_dir / "SIGNALS.md"
+    existing_signals = load_active_signals(signals_path)
+
+    extractor = SignalsExtractor(config.llm)
+
+    for path in paths:
+        source_override = args.source
+        if source_override:
+            source = get_source(source_override)
+        else:
+            source = detect_source(path)
+
+        log.info("Parsing %s (source: %s)", path.name, source.key)
+        transcript = source.parse_session(path)
+        cleaned = clean_transcript_for_signals(transcript)
+        total_msgs = sum(len(c) for c in cleaned.chunks)
+        log.info("Cleaned → %d messages in %d chunk(s)", total_msgs, len(cleaned.chunks))
+
+        log.info("Extracting signals via %s...", config.llm.provider)
+        result = extractor.extract(cleaned, existing_signals=existing_signals)
+
+        log.info("Found %d signal(s), %d demotion(s)",
+                 len(result.signals), len(result.demotions))
+
+        update_signals_file(
+            signals_path, result,
+            session_id=cleaned.metadata.session_id,
+            max_active=config.signals.max_active,
+        )
+        log.info("Updated %s", signals_path.relative_to(chronicles_dir))
 
 
 if __name__ == "__main__":
