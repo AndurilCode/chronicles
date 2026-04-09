@@ -12,7 +12,8 @@ Install the plugin to automatically capture knowledge from every session. Requir
 
 ```bash
 # Claude Code
-claude plugin install AndurilCode/chronicles:plugin
+claude plugin marketplace add AndurilCode/chronicles
+claude plugin install chronicles@chronicles
 
 # Copilot CLI
 copilot plugin install AndurilCode/chronicles:plugin

@@ -3,7 +3,8 @@
 ## Recommended: Plugin install
 
 ```bash
-claude plugin install AndurilCode/chronicles:plugin
+claude plugin marketplace add AndurilCode/chronicles
+claude plugin install chronicles@chronicles
 ```
 
 This auto-installs both `SessionStart` (GOLD.md context injection) and `SessionEnd` (transcript ingestion) hooks. The plugin is safe to install globally — it only activates in projects that have a `chronicles/` directory.
