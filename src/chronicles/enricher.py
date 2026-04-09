@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import re
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from chronicles.config import ChroniclesConfig
@@ -34,18 +35,19 @@ def enrich(chronicles_dir: Path, config: ChroniclesConfig) -> int:
 
 
 def _enrich_categories(chronicles_dir: Path, config: ChroniclesConfig) -> int:
-    """Generate summaries for category pages using the LLM."""
+    """Generate summaries for category pages using the LLM, in parallel."""
     categories_dir = chronicles_dir / "wiki" / "categories"
     if not categories_dir.exists():
         return 0
 
     articles_dir = chronicles_dir / "wiki" / "articles"
-    count = 0
 
+    # Collect categories that need enrichment
+    jobs: list[dict] = []
     for cat_path in sorted(categories_dir.glob("*.md")):
         content = cat_path.read_text()
 
-        # Skip if already has a summary (non-empty line after the title that isn't a list item)
+        # Skip if already has a summary
         lines = content.split("\n")
         has_summary = False
         past_title = False
@@ -67,60 +69,84 @@ def _enrich_categories(chronicles_dir: Path, config: ChroniclesConfig) -> int:
                 title = line[2:].strip()
                 break
 
-        # Collect article summaries (first non-heading line from each)
-        article_summaries = []
-        wikilink_re = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]+)?\]\]")
-        for match in wikilink_re.finditer(content):
-            article_name = match.group(1)
-            article_path = articles_dir / f"{article_name}.md"
-            if article_path.exists():
-                art_text = article_path.read_text()
-                # Get title and first body line
-                art_title = article_name
-                art_summary = ""
-                past_fm = False
-                past_art_title = False
-                for art_line in art_text.split("\n"):
-                    if art_line.strip() == "---":
-                        past_fm = not past_fm
-                        continue
-                    if past_fm and art_line.startswith("# "):
-                        art_title = art_line[2:].strip()
-                        past_art_title = True
-                        continue
-                    if past_art_title and art_line.strip() and not art_line.startswith("#"):
-                        art_summary = art_line.strip()
-                        break
-                article_summaries.append(f"- {art_title}: {art_summary}")
-
+        # Collect article summaries
+        article_summaries = _collect_article_summaries(content, articles_dir)
         if not article_summaries:
             continue
 
-        # Generate summary via LLM
         prompt = _CATEGORY_SUMMARY_PROMPT.format(
             title=title,
             article_list="\n".join(article_summaries),
         )
 
-        summary = _call_llm(prompt, config)
+        jobs.append({
+            "cat_path": cat_path,
+            "lines": lines,
+            "prompt": prompt,
+        })
+
+    if not jobs:
+        return 0
+
+    # Run LLM calls in parallel
+    max_workers = config.llm.max_concurrent
+
+    def process_job(job: dict) -> bool:
+        summary = _call_llm(job["prompt"], config)
         if not summary:
-            continue
+            return False
 
         # Insert summary after the title line
         new_lines = []
         inserted = False
-        for line in lines:
+        for line in job["lines"]:
             new_lines.append(line)
             if line.startswith("# ") and not inserted:
                 new_lines.append("")
                 new_lines.append(summary.strip())
                 inserted = True
 
-        cat_path.write_text("\n".join(new_lines))
-        log.info("  enriched category: %s", cat_path.name)
-        count += 1
+        job["cat_path"].write_text("\n".join(new_lines))
+        log.info("  enriched category: %s", job["cat_path"].name)
+        return True
+
+    count = 0
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        results = pool.map(process_job, jobs)
+        count = sum(1 for r in results if r)
 
     return count
+
+
+def _collect_article_summaries(category_content: str, articles_dir: Path) -> list[str]:
+    """Extract first-line summaries from articles referenced in a category page."""
+    summaries = []
+    wikilink_re = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]+)?\]\]")
+    for match in wikilink_re.finditer(category_content):
+        article_name = match.group(1)
+        article_path = articles_dir / f"{article_name}.md"
+        if not article_path.exists():
+            continue
+
+        art_text = article_path.read_text()
+        art_title = article_name
+        art_summary = ""
+        past_fm = False
+        past_title = False
+        for line in art_text.split("\n"):
+            if line.strip() == "---":
+                past_fm = not past_fm
+                continue
+            if past_fm and line.startswith("# "):
+                art_title = line[2:].strip()
+                past_title = True
+                continue
+            if past_title and line.strip() and not line.startswith("#"):
+                art_summary = line.strip()
+                break
+        summaries.append(f"- {art_title}: {art_summary}")
+
+    return summaries
 
 
 def _call_llm(prompt: str, config: ChroniclesConfig) -> str:
