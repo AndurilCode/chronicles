@@ -134,7 +134,11 @@ def test_lint_flags_stale_articles(chronicles_dir):
 
 
 def test_lint_infers_contradicts_relationship(chronicles_dir):
-    """When an article is contested, a contradicts relationship is added."""
+    """When an article is contested, a contradicts relationship is added.
+
+    Two lint passes are required: the first detects the contested status,
+    the second infers the contradicts relationship from the contested frontmatter.
+    """
     articles_dir = chronicles_dir / "wiki" / "articles"
 
     (articles_dir / "refresh-strategy.md").write_text(
@@ -150,10 +154,14 @@ def test_lint_infers_contradicts_relationship(chronicles_dir):
         "This contradicts [[refresh-strategy]].\n"
     )
 
-    report = lint(chronicles_dir)
-
+    # First pass: detects contested status
+    lint(chronicles_dir)
     content = (articles_dir / "refresh-strategy.md").read_text()
     assert "confidence: contested" in content
+
+    # Second pass: infers contradicts relationship from contested frontmatter
+    lint(chronicles_dir)
+    content = (articles_dir / "refresh-strategy.md").read_text()
     assert "relationships:" in content
     assert "type: contradicts" in content
     assert "target: 2026-04-15_refactor-auth" in content
@@ -334,7 +342,11 @@ def test_calibration_sets_promoted_on(chronicles_dir):
 
 
 def test_calibration_warns_on_quick_contestation(chronicles_dir):
-    """Warn when a recently promoted article gets contested."""
+    """Warn when a recently promoted article gets contested.
+
+    Two lint passes are required: the first detects the contested status (step 10),
+    the second runs _calibrate_confidence (step 9) and sees the contested frontmatter.
+    """
     from unittest.mock import patch
 
     path = chronicles_dir / "wiki" / "articles" / "fragile-convention.md"
@@ -352,6 +364,9 @@ def test_calibration_warns_on_quick_contestation(chronicles_dir):
     )
 
     with patch("chronicles.linter._get_similarity_engine", return_value=None):
+        # First pass: detects contested status
+        lint(chronicles_dir)
+        # Second pass: calibrate_confidence sees contested + promoted_on and warns
         report = lint(chronicles_dir)
 
     assert any("fragile-convention" in w and "contested shortly after promotion" in w

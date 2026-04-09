@@ -887,7 +887,7 @@ def lint(chronicles_dir: Path) -> LintReport:
 
     config = load_config(chronicles_dir)
 
-    # Archive old records before validation
+    # 1. Archive old records
     moved = rotate_records(chronicles_dir, config.archive.after_days)
     if moved:
         log.info("Archived %d old record(s)", len(moved))
@@ -895,46 +895,65 @@ def lint(chronicles_dir: Path) -> LintReport:
 
     renderer = TemplateRenderer()
 
+    # 2. Get similarity engine
     similarity_engine = _get_similarity_engine(config)
 
+    # 3. Load and validate articles
     articles_dir = chronicles_dir / "wiki" / "articles"
     articles, load_errors = _load_articles(articles_dir)
     report.errors.extend(load_errors)
     log.info("Loaded %d wiki article(s)", len(articles))
 
+    # 4. Semantic dedup
     articles = _detect_and_merge_duplicates(articles, report, similarity_engine)
 
+    # 5. Link integrity
     warnings = _check_wikilinks(articles)
     report.warnings.extend(warnings)
     if warnings:
         log.info("Found %d broken wikilink(s)", len(warnings))
 
+    # 6. Add implicit relationships
+    _infer_relationships(chronicles_dir, articles, report)
+
+    # 7. Demote/archive stale articles
     articles = _apply_decay(chronicles_dir, articles, config, report)
 
+    # 8. Promote articles by source count
     promotions = _manage_confidence(articles, config.confidence.promotion_threshold)
     report.promotions.extend(promotions)
     if promotions:
         log.info("Promoted %d article(s): %s", len(promotions), ", ".join(promotions))
 
-    _detect_contested(chronicles_dir, articles, report)
+    # 9. Track promotion quality
     _calibrate_confidence(articles, report)
-    _infer_relationships(chronicles_dir, articles, report)
+
+    # 10. Flag contradictions
+    _detect_contested(chronicles_dir, articles, report)
+
+    # 11. Auto-resolve with evidence
     _resolve_contested(articles, report)
+
+    # 12. Flag stale high-confidence articles
     _detect_stale(chronicles_dir, articles, report)
 
+    # 13. Rebuild category pages
     _regenerate_categories(chronicles_dir, articles, renderer)
     cat_dir = chronicles_dir / "wiki" / "categories"
     cat_count = len(list(cat_dir.glob("*.md"))) if cat_dir.exists() else 0
     log.info("Regenerated %d category page(s)", cat_count)
 
+    # 14. Update related links
     related_count = _add_related_sections(articles)
     if related_count:
         log.info("Added Related sections to %d article(s)", related_count)
 
+    # 15. Rebuild GOLD.md
     gold_count = _regenerate_gold(chronicles_dir, articles, renderer)
     report.gold_count = gold_count
     log.info("GOLD.md: %d high-confidence article(s)", gold_count)
 
+    # 16. Rebuild CONTESTED.md
     contested_count = _regenerate_contested(chronicles_dir, articles, renderer)
     if contested_count:
         log.info("CONTESTED.md: %d contested article(s)", contested_count)
