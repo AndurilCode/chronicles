@@ -9,13 +9,16 @@ source = { editable = "." }
 dependencies = [
     { name = "jinja2" },
     { name = "pyyaml" },
-    { name = "scikit-learn" },
 ]
 
 [package.optional-dependencies]
 dev = [
     { name = "pytest" },
     { name = "pytest-tmp-files" },
+    { name = "scikit-learn" },
+]
+tfidf = [
+    { name = "scikit-learn" },
 ]
 
 [package.metadata]
@@ -24,9 +27,10 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-tmp-files", marker = "extra == 'dev'", specifier = ">=0.0.2" },
     { name = "pyyaml", specifier = ">=6.0" },
-    { name = "scikit-learn", specifier = ">=1.4" },
+    { name = "scikit-learn", marker = "extra == 'dev'", specifier = ">=1.4" },
+    { name = "scikit-learn", marker = "extra == 'tfidf'", specifier = ">=1.4" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["tfidf", "dev"]
 
 [[package]]
 name = "colorama"
