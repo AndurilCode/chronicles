@@ -64,3 +64,13 @@ def test_extract_calls_copilot(mock_run):
     cmd = call_args[0][0]
     assert "copilot" in cmd[0]
     assert "--model" in cmd
+
+def test_prompt_includes_relationship_schema():
+    config = LLMConfig(provider="copilot-cli", model="gpt-5-mini")
+    extractor = CopilotCLIExtractor(config)
+    transcript = _make_cleaned_transcript()
+    prompt = extractor._build_prompt(transcript)
+    assert '"relationships"' in prompt
+    assert "supersedes" in prompt
+    assert "contradicts" in prompt
+    assert "depends-on" in prompt

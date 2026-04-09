@@ -40,7 +40,13 @@ Return ONLY valid JSON matching this schema (no markdown fences, no explanation)
         "body": "Detailed description. 3-5 sentences minimum. Explain WHAT the convention/decision/pattern is, WHY it exists, and HOW to apply it. Include code examples or file paths when relevant. This should be useful as standalone reference documentation.",
         "evidence": ["Specific evidence from the session — quote decisions, reference file paths, describe what was tried"],
         "implications": ["Concrete, actionable implications — what should developers do or avoid based on this knowledge"]
-      }
+      },
+      "relationships": [
+        {
+          "type": "contradicts | supersedes | depends-on | generalizes | related-to",
+          "target": "existing-article-slug"
+        }
+      ]
     }
   ]
 }
@@ -57,6 +63,10 @@ RULES for wiki_instructions:
 - If EXISTING WIKI ARTICLES are listed below, REUSE their tags when relevant instead of inventing new ones
 - If a discovery overlaps with an existing article, use "action": "update" with the EXISTING article path instead of creating a duplicate
 - Reference existing articles by their slug in your evidence or implications when relevant
+- If a new article supersedes, contradicts, or depends on an EXISTING article, add a "relationships" array to the wiki_instruction
+- Valid relationship types: contradicts, supersedes, depends-on, generalizes, related-to
+- "target" must be the slug (filename without .md) of an existing article listed above
+- Only add relationships when the connection is clear from the session evidence
 """
 
 
