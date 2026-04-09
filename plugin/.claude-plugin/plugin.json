@@ -4,7 +4,6 @@
   "description": "Auto-extract knowledge from agent sessions into a codebase wiki",
   "repository": "https://github.com/AndurilCode/chronicles",
   "license": "MIT",
-  "hooks": "../hooks/claude-code.json",
   "userConfig": {
     "chronicles_dir": {
       "title": "Chronicles directory",
