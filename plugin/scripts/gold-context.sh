@@ -22,27 +22,40 @@ GOLD_PATH="${CHRONICLES_DIR}/GOLD.md"
 has_gold_content() {
     [ -f "$GOLD_PATH" ] || return 1
     [ -s "$GOLD_PATH" ] || return 1
-    # Check for promoted_count > 0 in frontmatter
     if grep -q "promoted_count: 0" "$GOLD_PATH" 2>/dev/null; then
         return 1
     fi
     return 0
 }
 
-# Output orientation blurb
-echo "This project uses Chronicles — an automatic knowledge wiki built from agent sessions."
-echo "The chronicles wiki is at: ${DIR}/"
-echo "- GOLD.md: High-confidence validated knowledge. Read this for known conventions, decisions, and traps."
-echo "- CHRONICLES.md: Session index with all ingested sessions."
-echo "- CONTESTED.md: Articles with conflicting evidence across sessions."
-echo "- wiki/articles/: Individual knowledge articles at various confidence levels."
-echo "- wiki/categories/: Auto-generated topic clusters."
+# Build context string
+CONTEXT="This project uses Chronicles — an automatic knowledge wiki built from agent sessions.
+The chronicles wiki is at: ${DIR}/
+- GOLD.md: High-confidence validated knowledge. Read this for known conventions, decisions, and traps.
+- CHRONICLES.md: Session index with all ingested sessions.
+- CONTESTED.md: Articles with conflicting evidence across sessions.
+- wiki/articles/: Individual knowledge articles at various confidence levels.
+- wiki/categories/: Auto-generated topic clusters."
 
 if has_gold_content; then
-    echo ""
-    echo "Validated project knowledge from GOLD.md:"
-    echo "---"
-    cat "$GOLD_PATH"
+    GOLD_CONTENT=$(cat "$GOLD_PATH")
+    CONTEXT="${CONTEXT}
+
+Validated project knowledge from GOLD.md:
+---
+${GOLD_CONTENT}"
 fi
+
+# Output as structured JSON for the platform
+python3 -c "
+import json, os, sys
+context = sys.stdin.read()
+if os.environ.get('CLAUDE_PLUGIN_ROOT'):
+    # Claude Code format
+    print(json.dumps({'hookSpecificOutput': {'hookEventName': 'SessionStart', 'additionalContext': context}}))
+else:
+    # Copilot CLI / default format
+    print(json.dumps({'additionalContext': context}))
+" <<< "$CONTEXT"
 
 exit 0

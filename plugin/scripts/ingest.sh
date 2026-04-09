@@ -2,7 +2,7 @@
 # Chronicles plugin — SessionEnd hook
 # Ingests the session transcript into the chronicles wiki via uvx.
 
-set -euo pipefail
+set -uo pipefail
 
 # Read stdin JSON
 INPUT=$(cat)
@@ -20,16 +20,18 @@ CHRONICLES_DIR="${CWD}/${DIR}"
 # Check uvx is available
 if ! command -v uvx &>/dev/null; then
     echo "chronicles: uvx not found. Install uv (https://docs.astral.sh/uv/) to use the chronicles plugin." >&2
-    exit 1
+    exit 0
 fi
 
-# Ingest
+# Ingest (always exit 0 — never block the session on ingestion failure)
 if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
     # Claude Code / Copilot VS Code: transcript_path provided
     uvx --from "git+https://github.com/AndurilCode/chronicles[tfidf]" \
-        chronicles ingest "$TRANSCRIPT" --chronicles-dir "$CHRONICLES_DIR"
+        chronicles ingest "$TRANSCRIPT" --chronicles-dir "$CHRONICLES_DIR" || true
 else
     # Copilot CLI: discover the most recent session
     uvx --from "git+https://github.com/AndurilCode/chronicles[tfidf]" \
-        chronicles ingest --since 1d --last 1 --chronicles-dir "$CHRONICLES_DIR"
+        chronicles ingest --since 1d --last 1 --chronicles-dir "$CHRONICLES_DIR" || true
 fi
+
+exit 0
