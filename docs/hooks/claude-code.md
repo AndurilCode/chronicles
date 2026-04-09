@@ -1,5 +1,17 @@
 # Claude Code Hook Setup
 
+## Recommended: Plugin install
+
+```bash
+claude plugin install AndurilCode/chronicles:plugin
+```
+
+This auto-installs both `SessionStart` (GOLD.md context injection) and `SessionEnd` (transcript ingestion) hooks. The plugin is safe to install globally — it only activates in projects that have a `chronicles/` directory.
+
+Requires `uvx` ([install uv](https://docs.astral.sh/uv/)).
+
+## Manual setup
+
 Use the `SessionEnd` event — it fires once when the session terminates and provides `transcript_path` via stdin JSON.
 
 Add to `.claude/settings.json`:

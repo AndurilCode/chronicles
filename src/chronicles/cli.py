@@ -34,6 +34,8 @@ def main(argv: list[str] | None = None) -> None:
     ingest_p.add_argument("--since", type=str, default=None, help="Discover sessions since Nd (e.g. 7d)")
     ingest_p.add_argument("--chronicles-dir", type=Path, default=Path("chronicles"),
                           help="Path to chronicles directory")
+    ingest_p.add_argument("--last", type=int, default=None, metavar="N",
+                          help="Only process the N most recent discovered sessions")
     ingest_p.add_argument("--no-enrich", action="store_true",
                           help="Skip the enrich step after ingestion")
 
@@ -170,6 +172,9 @@ def _run_ingest(args: argparse.Namespace) -> None:
         for source in ALL_SOURCES:
             if source.key in config.sources and source.available():
                 paths.extend(source.discover_sessions(since=cutoff))
+
+    if args.last is not None and paths:
+        paths = sorted(paths, key=lambda p: p.stat().st_mtime)[-args.last:]
 
     if not paths:
         print("No transcript files to process.", file=sys.stderr)

@@ -1,5 +1,19 @@
 # Copilot CLI Hook Setup
 
+## Recommended: Plugin install
+
+```bash
+copilot plugin install AndurilCode/chronicles:plugin
+```
+
+This auto-installs both `sessionStart` (GOLD.md context injection) and `sessionEnd` (transcript ingestion) hooks. The plugin is safe to install globally — it only activates in projects that have a `chronicles/` directory.
+
+Requires `uvx` ([install uv](https://docs.astral.sh/uv/)).
+
+> **Note:** Context injection from plugin-sourced `sessionStart` hooks may have limitations. If GOLD.md is not injected, copy the hook config to `.github/hooks/hooks.json` manually (see below).
+
+## Manual setup
+
 Copilot CLI hooks are configured in `.github/hooks/hooks.json`.
 
 ```json

@@ -2,6 +2,18 @@
 
 > **Note:** VS Code Copilot hooks are currently in **Preview**.
 
+## Recommended: Plugin install
+
+The Chronicles plugin can be installed via Copilot CLI and shared with VS Code:
+
+```bash
+copilot plugin install AndurilCode/chronicles:plugin
+```
+
+Requires `uvx` ([install uv](https://docs.astral.sh/uv/)).
+
+## Manual setup
+
 Hooks are configured in `.vscode/hooks.json` in the workspace:
 
 ```json
