@@ -138,7 +138,8 @@ def test_ingest_with_relationships(chronicles_dir):
         }],
     })
 
-    with patch("chronicles.extractors.copilot_cli.subprocess.run") as mock_run:
+    with patch("chronicles.extractors.copilot_cli.subprocess.run") as mock_run, \
+         patch("chronicles.linter._get_similarity_engine", return_value=None):
         mock_run.return_value = MagicMock(
             returncode=0, stdout=extractor_response, stderr=""
         )

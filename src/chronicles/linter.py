@@ -13,6 +13,8 @@ import yaml
 
 from chronicles.archiver import rotate_records
 from chronicles.config import load_config
+from chronicles.similarity import get_similarity_engine
+from chronicles.similarity.base import BaseSimilarityEngine
 from chronicles.templates import TemplateRenderer
 
 log = logging.getLogger("chronicles")
@@ -163,9 +165,67 @@ def _manage_confidence(
     return promotions
 
 
-def _detect_and_merge_duplicates(articles: list[dict], report: LintReport) -> list[dict]:
+def _get_similarity_engine(config) -> BaseSimilarityEngine | None:
+    """Try to instantiate the configured similarity engine; return None on failure."""
+    try:
+        return get_similarity_engine(config.similarity, llm_config=config.llm)
+    except (ValueError, Exception) as e:
+        log.warning("Similarity engine unavailable, using fallback: %s", e)
+        return None
+
+
+def _detect_and_merge_duplicates(
+    articles: list[dict], report: LintReport, similarity_engine: BaseSimilarityEngine | None = None,
+) -> list[dict]:
+    """Dispatcher: use semantic dedup when engine is available, else fallback."""
     if len(articles) < 2:
         return articles
+    if similarity_engine is not None:
+        try:
+            return _semantic_dedup(articles, report, similarity_engine)
+        except Exception as e:
+            log.warning("Semantic dedup failed, using fallback: %s", e)
+    return _fallback_dedup(articles, report)
+
+
+def _semantic_dedup(
+    articles: list[dict], report: LintReport, engine: BaseSimilarityEngine,
+) -> list[dict]:
+    """Merge duplicate articles using semantic similarity via the engine."""
+    # Build comparison texts: "title: first_paragraph"
+    texts: list[str] = []
+    for article in articles:
+        title = article["path"].stem
+        body_match = re.match(r"^---\n.*?\n---\n\s*#[^\n]*\n\n(.+?)(\n\n|$)", article["text"], re.DOTALL)
+        first_para = body_match.group(1).strip() if body_match else ""
+        texts.append(f"{title}: {first_para}")
+
+    pairs = engine.batch_score(texts, engine.config.threshold)
+    # Sort by score descending so highest-similarity pairs merge first
+    pairs.sort(key=lambda t: t[2], reverse=True)
+
+    merged_indices: set[int] = set()
+    for i, j, score in pairs:
+        if i in merged_indices or j in merged_indices:
+            continue
+        a, b = articles[i], articles[j]
+        # Same type filter: never merge articles of different types
+        if a["frontmatter"].get("type") != b["frontmatter"].get("type"):
+            continue
+        report.warnings.append(f"Merged duplicate: {b['path'].stem} into {a['path'].stem}")
+        _merge_article(a, b)
+        # Add supersedes relationship on the surviving article
+        existing_rels = _parse_relationships(a["text"])
+        existing_rels.append({"type": "supersedes", "target": b["path"].stem})
+        _write_relationships(a, existing_rels)
+        merged_indices.add(j)
+        b["path"].unlink()
+
+    return [a for idx, a in enumerate(articles) if idx not in merged_indices]
+
+
+def _fallback_dedup(articles: list[dict], report: LintReport) -> list[dict]:
+    """Fallback dedup using SequenceMatcher on titles and Jaccard tag overlap."""
     merged_indices: set[int] = set()
     for i, a in enumerate(articles):
         if i in merged_indices:
@@ -552,12 +612,14 @@ def lint(chronicles_dir: Path) -> LintReport:
 
     renderer = TemplateRenderer()
 
+    similarity_engine = _get_similarity_engine(config)
+
     articles_dir = chronicles_dir / "wiki" / "articles"
     articles, load_errors = _load_articles(articles_dir)
     report.errors.extend(load_errors)
     log.info("Loaded %d wiki article(s)", len(articles))
 
-    articles = _detect_and_merge_duplicates(articles, report)
+    articles = _detect_and_merge_duplicates(articles, report, similarity_engine)
 
     warnings = _check_wikilinks(articles)
     report.warnings.extend(warnings)

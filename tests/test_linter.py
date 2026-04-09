@@ -182,3 +182,69 @@ def test_lint_infers_related_to_from_tags(chronicles_dir):
     assert "relationships:" in content_a
     assert "type: related-to" in content_a
     assert "target: article-b" in content_a
+
+
+def test_semantic_dedup_merges_similar_articles(chronicles_dir):
+    """Semantic dedup merges articles with similar content, adds supersedes relationship."""
+    from unittest.mock import patch, MagicMock
+
+    _write_article(chronicles_dir, "token-refresh-pattern",
+                   confidence="low", article_type="pattern", tags=["auth", "tokens"],
+                   sources=["2026-04-01_session-a"])
+    _write_article(chronicles_dir, "oauth-token-refresh",
+                   confidence="low", article_type="pattern", tags=["auth", "oauth"],
+                   sources=["2026-04-05_session-b"])
+
+    mock_engine = MagicMock()
+    mock_engine.batch_score.return_value = [(0, 1, 0.85)]
+    mock_engine.config = MagicMock(threshold=0.7)
+
+    with patch("chronicles.linter._get_similarity_engine", return_value=mock_engine):
+        report = lint(chronicles_dir)
+
+    articles = list((chronicles_dir / "wiki" / "articles").glob("*.md"))
+    assert len(articles) == 1
+    content = articles[0].read_text()
+    assert "session-a" in content
+    assert "session-b" in content
+    assert "type: supersedes" in content
+
+
+def test_semantic_dedup_fallback_without_engine(chronicles_dir):
+    """When similarity engine is unavailable, falls back to SequenceMatcher."""
+    from unittest.mock import patch
+
+    _write_article(chronicles_dir, "connection-suffix-pattern",
+                   confidence="low", tags=["naming"],
+                   sources=["2026-04-01_session-a"])
+    _write_article(chronicles_dir, "conn-suffix-pattern",
+                   confidence="low", tags=["naming"],
+                   sources=["2026-04-05_session-b"])
+
+    with patch("chronicles.linter._get_similarity_engine", return_value=None):
+        report = lint(chronicles_dir)
+
+    articles = list((chronicles_dir / "wiki" / "articles").glob("*.md"))
+    assert len(articles) == 1
+
+
+def test_semantic_dedup_respects_type_filter(chronicles_dir):
+    """Articles with different types are never merged, even if semantically similar."""
+    from unittest.mock import patch, MagicMock
+
+    _write_article(chronicles_dir, "retry-convention",
+                   confidence="low", article_type="convention", tags=["retry"],
+                   sources=["2026-04-01_s1"])
+    _write_article(chronicles_dir, "retry-pattern",
+                   confidence="low", article_type="pattern", tags=["retry"],
+                   sources=["2026-04-05_s2"])
+
+    mock_engine = MagicMock()
+    mock_engine.batch_score.return_value = [(0, 1, 0.95)]
+    mock_engine.config = MagicMock(threshold=0.7)
+
+    with patch("chronicles.linter._get_similarity_engine", return_value=mock_engine):
+        report = lint(chronicles_dir)
+
+    articles = list((chronicles_dir / "wiki" / "articles").glob("*.md"))
+    assert len(articles) == 2
