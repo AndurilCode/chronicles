@@ -363,11 +363,13 @@ def _regenerate_categories(
     for old in categories_dir.glob("*.md"):
         old.unlink()
 
-    # Generate one category page per tag
+    # Generate category pages only for tags with 2+ articles (or articles + queries)
     all_tags = sorted(set(list(tag_to_articles.keys()) + list(tag_to_questions.keys())))
     for tag in all_tags:
         article_list = sorted(tag_to_articles.get(tag, []))
         question_list = sorted(tag_to_questions.get(tag, []))
+        if len(article_list) + len(question_list) < 2:
+            continue
 
         # Title: capitalize and replace hyphens
         title = tag.replace("-", " ").replace("_", " ").title()
