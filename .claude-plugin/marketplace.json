@@ -1,0 +1,14 @@
+{
+  "name": "chronicles",
+  "description": "Automatic knowledge extraction from agent sessions into a codebase wiki",
+  "owner": {
+    "name": "AndurilCode"
+  },
+  "plugins": [
+    {
+      "name": "chronicles",
+      "description": "Auto-extract knowledge from agent sessions into a codebase wiki",
+      "source": "./plugin"
+    }
+  ]
+}
