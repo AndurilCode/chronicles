@@ -9,6 +9,7 @@ from typing import Any
 
 import yaml
 
+from chronicles.archiver import rotate_records
 from chronicles.config import load_config
 from chronicles.templates import TemplateRenderer
 
@@ -207,6 +208,12 @@ def lint(chronicles_dir: Path) -> LintReport:
     report = LintReport()
 
     config = load_config(chronicles_dir)
+
+    # Archive old records before validation
+    moved = rotate_records(chronicles_dir, config.archive.after_days)
+    if moved:
+        report.warnings.append(f"Archived {len(moved)} old record(s)")
+
     renderer = TemplateRenderer()
 
     articles_dir = chronicles_dir / "wiki" / "articles"
