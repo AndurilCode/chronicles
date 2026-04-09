@@ -32,3 +32,34 @@ def test_load_config_partial_override(tmp_path):
     assert config.llm.model == "claude-opus-4-6"
     assert config.llm.max_concurrent == 3  # default
     assert config.confidence.promotion_threshold == 3  # default
+
+
+def test_load_config_new_sections_defaults(tmp_path):
+    """New config sections use defaults when absent."""
+    config = load_config(tmp_path)
+    assert config.similarity.engine == "llm"
+    assert config.similarity.threshold == 0.7
+    assert config.decay.high_to_medium_days == 180
+    assert config.decay.medium_to_low_days == 270
+    assert config.decay.archive_after_days == 365
+    assert config.gaps.enabled is True
+    assert config.gaps.git_lookback_days == 90
+
+
+def test_load_config_new_sections_override(tmp_path):
+    """New config sections can be overridden."""
+    (tmp_path / "config.yaml").write_text(
+        "similarity:\n"
+        "  engine: tfidf\n"
+        "  threshold: 0.8\n"
+        "decay:\n"
+        "  high_to_medium_days: 90\n"
+        "gaps:\n"
+        "  enabled: false\n"
+    )
+    config = load_config(tmp_path)
+    assert config.similarity.engine == "tfidf"
+    assert config.similarity.threshold == 0.8
+    assert config.decay.high_to_medium_days == 90
+    assert config.decay.medium_to_low_days == 270  # default
+    assert config.gaps.enabled is False

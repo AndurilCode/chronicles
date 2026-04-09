@@ -30,12 +30,34 @@ class EnrichConfig:
 
 
 @dataclass
+class SimilarityConfig:
+    engine: str = "llm"
+    threshold: float = 0.7
+
+
+@dataclass
+class DecayConfig:
+    high_to_medium_days: int = 180
+    medium_to_low_days: int = 270
+    archive_after_days: int = 365
+
+
+@dataclass
+class GapsConfig:
+    enabled: bool = True
+    git_lookback_days: int = 90
+
+
+@dataclass
 class ChroniclesConfig:
     llm: LLMConfig
     sources: list[str]
     confidence: ConfidenceConfig
     archive: ArchiveConfig
     enrich: EnrichConfig
+    similarity: SimilarityConfig
+    decay: DecayConfig
+    gaps: GapsConfig
     chronicles_dir: Path
 
 
@@ -71,11 +93,33 @@ def load_config(chronicles_dir: Path) -> ChroniclesConfig:
         enabled=enrich_raw.get("enabled", True),
     )
 
+    sim_raw = raw.get("similarity", {})
+    similarity = SimilarityConfig(
+        engine=sim_raw.get("engine", "llm"),
+        threshold=sim_raw.get("threshold", 0.7),
+    )
+
+    decay_raw = raw.get("decay", {})
+    decay = DecayConfig(
+        high_to_medium_days=decay_raw.get("high_to_medium_days", 180),
+        medium_to_low_days=decay_raw.get("medium_to_low_days", 270),
+        archive_after_days=decay_raw.get("archive_after_days", 365),
+    )
+
+    gaps_raw = raw.get("gaps", {})
+    gaps = GapsConfig(
+        enabled=gaps_raw.get("enabled", True),
+        git_lookback_days=gaps_raw.get("git_lookback_days", 90),
+    )
+
     return ChroniclesConfig(
         llm=llm,
         sources=sources,
         confidence=confidence,
         archive=archive,
         enrich=enrich,
+        similarity=similarity,
+        decay=decay,
+        gaps=gaps,
         chronicles_dir=chronicles_dir,
     )
