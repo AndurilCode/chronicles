@@ -65,6 +65,19 @@ def test_extract_calls_copilot(mock_run):
     assert "copilot" in cmd[0]
     assert "--model" in cmd
 
+def test_prompt_includes_contested_context():
+    config = LLMConfig(provider="copilot-cli", model="gpt-5-mini")
+    extractor = CopilotCLIExtractor(config)
+    transcript = _make_cleaned_transcript()
+    wiki_context = [
+        {"title": "Refresh Strategy", "type": "decision", "tags": ["auth"],
+         "path": "wiki/articles/refresh-strategy.md", "confidence": "contested"},
+    ]
+    prompt = extractor._build_prompt(transcript, wiki_context)
+    assert "CONTESTED" in prompt
+    assert "Refresh Strategy" in prompt
+    assert '"resolve"' in prompt
+
 def test_prompt_includes_relationship_schema():
     config = LLMConfig(provider="copilot-cli", model="gpt-5-mini")
     extractor = CopilotCLIExtractor(config)

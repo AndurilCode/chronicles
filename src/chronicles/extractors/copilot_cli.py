@@ -92,6 +92,20 @@ class CopilotCLIExtractor(BaseExtractor):
                 )
             lines.append("--- END EXISTING WIKI ---")
 
+        # Surface contested articles for resolution
+        if wiki_context:
+            contested = [a for a in wiki_context if a.get("confidence") == "contested"]
+            if contested:
+                lines.append("")
+                lines.append("--- CONTESTED ARTICLES ---")
+                lines.append(
+                    "The following articles are CONTESTED — if this session provides evidence "
+                    'for either side, include a wiki_instruction with action: "resolve" and the article path.'
+                )
+                for article in contested:
+                    lines.append(f"- {article['title']} (path={article.get('path', '?')})")
+                lines.append("--- END CONTESTED ---")
+
         lines.append("")
         lines.append("--- TRANSCRIPT ---")
         lines.append("")

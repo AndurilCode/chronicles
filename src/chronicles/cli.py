@@ -126,6 +126,7 @@ def _load_wiki_context(chronicles_dir: Path) -> list[dict]:
             "type": fm.get("type", ""),
             "tags": tags,
             "path": f"wiki/articles/{path.name}",
+            "confidence": fm.get("confidence", ""),
         })
 
     return context
