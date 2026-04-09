@@ -171,25 +171,25 @@ def test_lint_infers_related_to_from_tags(chronicles_dir):
     """Articles with overlapping tags get related-to relationships."""
     articles_dir = chronicles_dir / "wiki" / "articles"
 
-    (articles_dir / "article-a.md").write_text(
+    (articles_dir / "oauth-refresh-pattern.md").write_text(
         "---\ntype: convention\nconfidence: medium\nsources:\n"
         '  - "[[2026-04-01_s1]]"\n  - "[[2026-04-02_s2]]"\ntags: [auth, oauth]\n'
         "first_seen: 2026-04-01\nlast_confirmed: 2026-04-01\n---\n\n"
-        "# Article A\n\nContent A.\n"
+        "# OAuth Refresh Pattern\n\nAlways use refresh tokens before expiry to avoid retry complexity.\n"
     )
-    (articles_dir / "article-b.md").write_text(
+    (articles_dir / "database-connection-pooling.md").write_text(
         "---\ntype: convention\nconfidence: medium\nsources:\n"
-        '  - "[[2026-04-01_s1]]"\n  - "[[2026-04-02_s2]]"\ntags: [auth, tokens]\n'
+        '  - "[[2026-04-01_s1]]"\n  - "[[2026-04-02_s2]]"\ntags: [auth, database]\n'
         "first_seen: 2026-04-01\nlast_confirmed: 2026-04-01\n---\n\n"
-        "# Article B\n\nContent B.\n"
+        "# Database Connection Pooling\n\nUse connection pools with authenticated credentials for all database access.\n"
     )
 
     lint(chronicles_dir)
 
-    content_a = (articles_dir / "article-a.md").read_text()
+    content_a = (articles_dir / "oauth-refresh-pattern.md").read_text()
     assert "relationships:" in content_a
     assert "type: related-to" in content_a
-    assert "target: article-b" in content_a
+    assert "target: database-connection-pooling" in content_a
 
 
 def test_semantic_dedup_merges_similar_articles(chronicles_dir):

@@ -31,8 +31,8 @@ class EnrichConfig:
 
 @dataclass
 class SimilarityConfig:
-    engine: str = "llm"
-    threshold: float = 0.7
+    engine: str = "tfidf"
+    threshold: float = 0.3
 
 
 @dataclass
@@ -95,8 +95,8 @@ def load_config(chronicles_dir: Path) -> ChroniclesConfig:
 
     sim_raw = raw.get("similarity", {})
     similarity = SimilarityConfig(
-        engine=sim_raw.get("engine", "llm"),
-        threshold=sim_raw.get("threshold", 0.7),
+        engine=sim_raw.get("engine", "tfidf"),
+        threshold=sim_raw.get("threshold", 0.3),
     )
 
     decay_raw = raw.get("decay", {})

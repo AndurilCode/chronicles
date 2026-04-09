@@ -37,8 +37,8 @@ def test_load_config_partial_override(tmp_path):
 def test_load_config_new_sections_defaults(tmp_path):
     """New config sections use defaults when absent."""
     config = load_config(tmp_path)
-    assert config.similarity.engine == "llm"
-    assert config.similarity.threshold == 0.7
+    assert config.similarity.engine == "tfidf"
+    assert config.similarity.threshold == 0.3
     assert config.decay.high_to_medium_days == 180
     assert config.decay.medium_to_low_days == 270
     assert config.decay.archive_after_days == 365

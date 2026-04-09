@@ -7,6 +7,9 @@ from chronicles.similarity.base import BaseSimilarityEngine
 
 def get_similarity_engine(config: SimilarityConfig, llm_config=None) -> BaseSimilarityEngine:
     """Factory: return the configured similarity engine."""
+    if config.engine == "tfidf":
+        from chronicles.similarity.tfidf import TfidfSimilarityEngine
+        return TfidfSimilarityEngine(config)
     if config.engine == "llm":
         from chronicles.similarity.llm import LLMSimilarityEngine
         if llm_config is None:
