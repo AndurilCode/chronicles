@@ -248,3 +248,96 @@ def test_semantic_dedup_respects_type_filter(chronicles_dir):
 
     articles = list((chronicles_dir / "wiki" / "articles").glob("*.md"))
     assert len(articles) == 2
+
+
+def test_decay_demotes_high_to_medium(chronicles_dir):
+    """High-confidence article with old last_confirmed gets demoted to medium."""
+    from unittest.mock import patch
+
+    _write_article(chronicles_dir, "old-high", confidence="high",
+                   sources=["2025-01-01_ancient", "2025-02-01_old", "2025-03-01_also-old"])
+    path = chronicles_dir / "wiki" / "articles" / "old-high.md"
+    text = path.read_text().replace("last_confirmed: 2026-04-09", "last_confirmed: 2025-06-01")
+    path.write_text(text)
+
+    with patch("chronicles.linter._get_similarity_engine", return_value=None):
+        report = lint(chronicles_dir)
+
+    content = path.read_text()
+    assert "confidence: medium" in content
+    assert any("old-high" in w and "high -> medium" in w for w in report.warnings)
+
+
+def test_decay_medium_to_low_requires_no_inbound_links(chronicles_dir):
+    """Medium article is NOT demoted to low if other articles link to it."""
+    from unittest.mock import patch
+
+    _write_article(chronicles_dir, "referenced-medium", confidence="medium",
+                   sources=["2025-01-01_ancient", "2025-02-01_old"])
+    path = chronicles_dir / "wiki" / "articles" / "referenced-medium.md"
+    text = path.read_text().replace("last_confirmed: 2026-04-09", "last_confirmed: 2025-01-01")
+    path.write_text(text)
+
+    linker = chronicles_dir / "wiki" / "articles" / "linker.md"
+    linker.write_text(
+        "---\ntype: convention\nconfidence: low\nsources:\n"
+        '  - "[[2026-04-01_recent]]"\ntags: [other]\n'
+        "first_seen: 2026-04-01\nlast_confirmed: 2026-04-01\n---\n\n"
+        "# Linker\n\nSee [[referenced-medium]] for details.\n"
+    )
+
+    (chronicles_dir / "records" / "2026-04-01_recent.md").write_text(
+        "---\ndate: 2026-04-01\n---\n# Recent\n"
+    )
+
+    with patch("chronicles.linter._get_similarity_engine", return_value=None):
+        report = lint(chronicles_dir)
+
+    content = path.read_text()
+    assert "confidence: medium" in content  # NOT demoted
+
+
+def test_decay_archives_old_low_article(chronicles_dir):
+    """Low-confidence article with no links gets archived after archive_after_days."""
+    from unittest.mock import patch
+
+    _write_article(chronicles_dir, "ancient-low", confidence="low",
+                   sources=["2024-01-01_very-old"])
+    path = chronicles_dir / "wiki" / "articles" / "ancient-low.md"
+    text = path.read_text().replace("last_confirmed: 2026-04-09", "last_confirmed: 2024-01-01")
+    path.write_text(text)
+
+    with patch("chronicles.linter._get_similarity_engine", return_value=None):
+        report = lint(chronicles_dir)
+
+    assert not path.exists()
+    archived = chronicles_dir / "wiki" / "archived" / "ancient-low.md"
+    assert archived.exists()
+    content = archived.read_text()
+    assert "archived_reason: decay" in content
+
+
+def test_decay_skips_depends_on_targets(chronicles_dir):
+    """Articles that are depends-on targets are never archived."""
+    from unittest.mock import patch
+
+    _write_article(chronicles_dir, "depended-upon", confidence="low",
+                   sources=["2024-01-01_very-old"])
+    path = chronicles_dir / "wiki" / "articles" / "depended-upon.md"
+    text = path.read_text().replace("last_confirmed: 2026-04-09", "last_confirmed: 2024-01-01")
+    path.write_text(text)
+
+    depender = chronicles_dir / "wiki" / "articles" / "depender.md"
+    depender.write_text(
+        "---\ntype: convention\nconfidence: medium\nsources:\n"
+        '  - "[[2026-04-01_recent]]"\n  - "[[2026-04-02_recent2]]"\ntags: [other]\n'
+        "first_seen: 2026-04-01\nlast_confirmed: 2026-04-01\n"
+        "relationships:\n  - type: depends-on\n    target: depended-upon\n---\n\n"
+        "# Depender\n\nDepends on depended-upon.\n"
+    )
+
+    with patch("chronicles.linter._get_similarity_engine", return_value=None):
+        report = lint(chronicles_dir)
+
+    assert path.exists()  # NOT archived
+    assert any("depended-upon" in w and "depends-on" in w for w in report.warnings)

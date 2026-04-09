@@ -132,6 +132,10 @@ def _manage_confidence(
     promotions: list[str] = []
 
     for article in articles:
+        # Skip articles that were just decayed — don't re-promote them
+        if article.get("decayed"):
+            continue
+
         fm = article["frontmatter"]
         path: Path = article["path"]
         confidence = fm.get("confidence", "low")
@@ -394,6 +398,156 @@ def _infer_relationships(
             _write_relationships(article, new_rels)
 
 
+def _compute_last_confirmation(article: dict, chronicles_dir: Path) -> str:
+    """Return ISO date string of most recent confirmation for an article.
+
+    Checks last_confirmed frontmatter AND scans records for wikilinks to the article
+    (most recent record date wins).
+    """
+    fm = article["frontmatter"]
+    best = str(fm.get("last_confirmed", "1970-01-01"))
+
+    records_dir = chronicles_dir / "records"
+    if records_dir.exists():
+        article_name = article["path"].stem
+        wikilink_re = re.compile(r"\[\[" + re.escape(article_name) + r"(?:\|[^\]]+)?\]\]")
+        for record_path in sorted(records_dir.glob("*.md")):
+            content = record_path.read_text()
+            if wikilink_re.search(content):
+                # Extract date from record filename (YYYY-MM-DD prefix)
+                date_match = re.match(r"(\d{4}-\d{2}-\d{2})", record_path.stem)
+                if date_match and date_match.group(1) > best:
+                    best = date_match.group(1)
+
+    return best
+
+
+def _has_inbound_wikilinks(article_name: str, articles: list[dict], chronicles_dir: Path) -> bool:
+    """Check if any non-archived article body or record contains [[article_name]]."""
+    wikilink_re = re.compile(r"\[\[" + re.escape(article_name) + r"(?:\|[^\]]+)?\]\]")
+
+    for other in articles:
+        if other["path"].stem == article_name:
+            continue
+        # Check body only (strip frontmatter)
+        body_match = re.match(r"^---\n.*?\n---\n(.*)", other["text"], re.DOTALL)
+        body = body_match.group(1) if body_match else other["text"]
+        if wikilink_re.search(body):
+            return True
+
+    records_dir = chronicles_dir / "records"
+    if records_dir.exists():
+        for record_path in records_dir.glob("*.md"):
+            if wikilink_re.search(record_path.read_text()):
+                return True
+
+    return False
+
+
+def _is_depends_on_target(article_name: str, articles: list[dict]) -> bool:
+    """Check if any article has a depends-on relationship targeting this article."""
+    for other in articles:
+        rels = other["frontmatter"].get("relationships", []) or []
+        for r in rels:
+            if r.get("type") == "depends-on" and r.get("target") == article_name:
+                return True
+    return False
+
+
+def _apply_decay(
+    chronicles_dir: Path,
+    articles: list[dict],
+    config: Any,
+    report: LintReport,
+) -> list[dict]:
+    """Apply time-based decay: demote stale articles and archive old low-confidence ones.
+
+    Returns the article list with archived articles removed.
+    """
+    today = date.fromisoformat(_today())
+    archived_dir = chronicles_dir / "wiki" / "archived"
+    to_remove: set[int] = set()
+
+    for idx, article in enumerate(articles):
+        fm = article["frontmatter"]
+        confidence = fm.get("confidence", "low")
+
+        # Skip contested articles
+        if confidence == "contested":
+            continue
+
+        last_confirmed_str = _compute_last_confirmation(article, chronicles_dir)
+        try:
+            last_confirmed = date.fromisoformat(last_confirmed_str)
+        except (ValueError, TypeError):
+            continue
+
+        days_stale = (today - last_confirmed).days
+        path: Path = article["path"]
+        name = path.stem
+
+        if confidence == "high" and days_stale >= config.decay.high_to_medium_days:
+            # Demote high -> medium
+            old_text = article["text"]
+            new_text = re.sub(
+                r"^confidence: \S+",
+                "confidence: medium",
+                old_text,
+                count=1,
+                flags=re.MULTILINE,
+            )
+            path.write_text(new_text)
+            article["text"] = new_text
+            article["frontmatter"] = {**fm, "confidence": "medium"}
+            article["decayed"] = True
+            report.warnings.append(f"{name}: decayed high -> medium ({days_stale}d stale)")
+
+        elif confidence == "medium" and days_stale >= config.decay.medium_to_low_days:
+            # Demote medium -> low only if no inbound wikilinks
+            if not _has_inbound_wikilinks(name, articles, chronicles_dir):
+                old_text = article["text"]
+                new_text = re.sub(
+                    r"^confidence: \S+",
+                    "confidence: low",
+                    old_text,
+                    count=1,
+                    flags=re.MULTILINE,
+                )
+                path.write_text(new_text)
+                article["text"] = new_text
+                article["frontmatter"] = {**fm, "confidence": "low"}
+                article["decayed"] = True
+                report.warnings.append(f"{name}: decayed medium -> low ({days_stale}d stale)")
+
+        elif confidence == "low" and days_stale >= config.decay.archive_after_days:
+            # Archive low articles if no depends-on target and no inbound wikilinks
+            if _is_depends_on_target(name, articles):
+                report.warnings.append(
+                    f"{name}: skipped archival (depends-on target)"
+                )
+                continue
+            if _has_inbound_wikilinks(name, articles, chronicles_dir):
+                continue
+
+            # Move to archived
+            archived_dir.mkdir(parents=True, exist_ok=True)
+            old_text = article["text"]
+            # Add archived metadata to frontmatter
+            new_text = re.sub(
+                r"\n---\n",
+                f"\narchived_reason: decay\narchived_on: {_today()}\n---\n",
+                old_text,
+                count=1,
+            )
+            archived_path = archived_dir / path.name
+            archived_path.write_text(new_text)
+            path.unlink()
+            to_remove.add(idx)
+            report.warnings.append(f"{name}: archived (low, {days_stale}d stale)")
+
+    return [a for i, a in enumerate(articles) if i not in to_remove]
+
+
 def _detect_stale(chronicles_dir: Path, articles: list[dict], report: LintReport) -> None:
     records_dir = chronicles_dir / "records"
     if not records_dir.exists():
@@ -625,6 +779,8 @@ def lint(chronicles_dir: Path) -> LintReport:
     report.warnings.extend(warnings)
     if warnings:
         log.info("Found %d broken wikilink(s)", len(warnings))
+
+    articles = _apply_decay(chronicles_dir, articles, config, report)
 
     promotions = _manage_confidence(articles, config.confidence.promotion_threshold)
     report.promotions.extend(promotions)
