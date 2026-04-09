@@ -1,0 +1,14 @@
+---
+type: gold-index
+last_updated: {{ date }}
+promoted_count: {{ count }}
+---
+
+# Gold Notes
+
+> High-confidence, validated knowledge for this repository. Read before acting.
+
+{% for group_name, articles in groups %}## {{ group_name }}
+{% for a in articles %}- [[{{ a.title }}]] -- {{ a.summary }}
+{% endfor %}
+{% endfor %}

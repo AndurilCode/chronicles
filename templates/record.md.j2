@@ -1,0 +1,32 @@
+---
+date: {{ date }}
+branch: {{ branch }}
+status: {{ status }}
+tags: {{ tags }}
+agent: {{ source }}
+duration: {{ duration }}
+files_changed:
+{% for f in files_changed %}  - {{ f }}
+{% endfor %}---
+
+# {{ branch }}
+
+> **Objective**: {{ objective }}
+> **Outcome**: {{ outcome }}
+
+## Decisions
+{% for d in decisions %}- {{ d.description }} -- {{ d.rationale }}
+{% endfor %}
+## Problems
+{% for p in problems %}{% if p.dead_end %}- Dead end: {{ p.description }}, {{ p.root_cause }}
+{% else %}- `{{ p.description }}`
+  -> root cause: {{ p.root_cause }}
+{% endif %}{% endfor %}
+## Discovered
+{% for d in discovered %}- [{{ d.type }}] {{ d.description }}
+{% endfor %}
+## Continuity
+{% for u in continuity.unfinished %}- **Unfinished**: {{ u }}
+{% endfor %}{% for q in continuity.open_questions %}- **Open question**: {{ q }}
+{% endfor %}{% for n in continuity.next %}- **Next**: {{ n }}
+{% endfor %}

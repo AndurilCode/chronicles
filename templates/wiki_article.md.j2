@@ -1,0 +1,20 @@
+---
+type: {{ type }}
+confidence: {{ confidence }}
+sources:
+{% for s in sources %}  - "[[{{ s }}]]"
+{% endfor %}first_seen: {{ first_seen }}
+last_confirmed: {{ last_confirmed }}
+tags: {{ tags }}
+---
+
+# {{ title }}
+
+{{ body }}
+
+## Evidence
+{% for e in evidence %}- {{ e }}
+{% endfor %}
+## Implications
+{% for i in implications %}- {{ i }}
+{% endfor %}

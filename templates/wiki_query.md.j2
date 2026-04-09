@@ -1,0 +1,12 @@
+---
+type: query
+asked_by: {{ asked_by }}
+date: {{ date }}
+answered_from:
+{% for a in answered_from %}  - "[[{{ a }}]]"
+{% endfor %}tags: {{ tags }}
+---
+
+# {{ question }}
+
+{{ answer }}

@@ -1,0 +1,12 @@
+---
+type: category
+tags: {{ tags }}
+---
+
+# {{ title }}
+
+{% for a in articles %}- [[{{ a }}]]
+{% endfor %}
+{% if open_questions %}## Open Questions
+{% for q in open_questions %}- [[{{ q }}]]
+{% endfor %}{% endif %}
