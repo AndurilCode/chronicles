@@ -1,0 +1,10 @@
+{"type":"session.start","timestamp":"2026-04-09T10:00:00.000Z","cwd":"/home/user/project"}
+{"type":"turn.start","timestamp":"2026-04-09T10:00:01.000Z","request":{"type":"user-text","message":"Fix the bug in auth.py"}}
+{"type":"tool.call","timestamp":"2026-04-09T10:00:03.000Z","tool":{"name":"readFile","parameters":{"path":"/home/user/project/src/auth.py"}}}
+{"type":"tool.result","timestamp":"2026-04-09T10:00:04.000Z","tool":{"name":"readFile"},"result":"def login(user, password):\n    return check(user, pasword)\n"}
+{"type":"message","timestamp":"2026-04-09T10:00:06.000Z","role":"assistant","content":"I see a typo. Let me fix it."}
+{"type":"tool.call","timestamp":"2026-04-09T10:00:07.000Z","tool":{"name":"editFile","parameters":{"path":"/home/user/project/src/auth.py","oldText":"pasword","newText":"password"}}}
+{"type":"tool.result","timestamp":"2026-04-09T10:00:08.000Z","tool":{"name":"editFile"},"result":"File edited."}
+{"type":"message","timestamp":"2026-04-09T10:00:10.000Z","role":"assistant","content":"Fixed the typo."}
+{"type":"turn.end","timestamp":"2026-04-09T10:00:11.000Z"}
+{"type":"session.shutdown","timestamp":"2026-04-09T10:00:15.000Z","reason":"user_exit","modelMetrics":{"outputTokens":150},"codeChanges":{"linesAdded":1,"linesRemoved":1}}
