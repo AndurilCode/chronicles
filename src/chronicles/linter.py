@@ -169,6 +169,38 @@ def _manage_confidence(
     return promotions
 
 
+def _calibrate_confidence(
+    articles: list[dict],
+    report: LintReport,
+) -> None:
+    """Track confidence calibration — set promoted_on on new promotions, warn on quick contestation."""
+    today = _today()
+
+    for article in articles:
+        fm = article["frontmatter"]
+        path: Path = article["path"]
+
+        # If just promoted to high (by _manage_confidence), set promoted_on
+        if fm.get("confidence") == "high" and not fm.get("promoted_on"):
+            old_text = article["text"]
+            new_text = re.sub(
+                r"\n---\n",
+                f"\npromoted_on: {today}\n---\n",
+                old_text,
+                count=1,
+            )
+            path.write_text(new_text)
+            article["text"] = new_text
+            article["frontmatter"]["promoted_on"] = today
+
+        # If contested and has promoted_on, warn about quick contestation
+        if fm.get("confidence") == "contested" and fm.get("promoted_on"):
+            report.warnings.append(
+                f"Calibration: {path.stem} contested shortly after promotion "
+                f"(promoted {fm['promoted_on']}) — type '{fm.get('type')}' may need higher promotion_threshold"
+            )
+
+
 def _get_similarity_engine(config) -> BaseSimilarityEngine | None:
     """Try to instantiate the configured similarity engine; return None on failure."""
     try:
@@ -788,6 +820,7 @@ def lint(chronicles_dir: Path) -> LintReport:
         log.info("Promoted %d article(s): %s", len(promotions), ", ".join(promotions))
 
     _detect_contested(chronicles_dir, articles, report)
+    _calibrate_confidence(articles, report)
     _infer_relationships(chronicles_dir, articles, report)
     _detect_stale(chronicles_dir, articles, report)
 

@@ -317,6 +317,47 @@ def test_decay_archives_old_low_article(chronicles_dir):
     assert "archived_reason: decay" in content
 
 
+def test_calibration_sets_promoted_on(chronicles_dir):
+    """When an article is promoted to high, promoted_on is set."""
+    from unittest.mock import patch
+
+    _write_article(chronicles_dir, "promoted-article",
+                   confidence="medium",
+                   sources=["s1", "s2", "s3"])
+
+    with patch("chronicles.linter._get_similarity_engine", return_value=None):
+        report = lint(chronicles_dir)
+
+    content = (chronicles_dir / "wiki" / "articles" / "promoted-article.md").read_text()
+    assert "confidence: high" in content
+    assert "promoted_on:" in content
+
+
+def test_calibration_warns_on_quick_contestation(chronicles_dir):
+    """Warn when a recently promoted article gets contested."""
+    from unittest.mock import patch
+
+    path = chronicles_dir / "wiki" / "articles" / "fragile-convention.md"
+    path.write_text(
+        "---\ntype: convention\nconfidence: high\nsources:\n"
+        '  - "[[2026-04-01_s1]]"\n  - "[[2026-04-02_s2]]"\n  - "[[2026-04-03_s3]]"\n'
+        "tags: [test]\nfirst_seen: 2026-04-01\nlast_confirmed: 2026-04-03\n"
+        "promoted_on: 2026-04-03\n---\n\n# Fragile Convention\n\nContent.\n"
+    )
+
+    record = chronicles_dir / "records" / "2026-04-05_challenge.md"
+    record.write_text(
+        "---\ndate: 2026-04-05\n---\n\n# Challenge\n\n"
+        "This contradicts [[fragile-convention]].\n"
+    )
+
+    with patch("chronicles.linter._get_similarity_engine", return_value=None):
+        report = lint(chronicles_dir)
+
+    assert any("fragile-convention" in w and "contested shortly after promotion" in w
+               for w in report.warnings)
+
+
 def test_decay_skips_depends_on_targets(chronicles_dir):
     """Articles that are depends-on targets are never archived."""
     from unittest.mock import patch
