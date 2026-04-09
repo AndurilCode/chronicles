@@ -6,6 +6,30 @@ Every Claude Code / Copilot session is a source of engineering knowledge. Chroni
 
 ## Install
 
+### Plugin (recommended)
+
+Install the plugin to automatically capture knowledge from every session. Requires [uv](https://docs.astral.sh/uv/).
+
+```bash
+# Claude Code
+claude plugin install AndurilCode/chronicles:plugin
+
+# Copilot CLI
+copilot plugin install AndurilCode/chronicles:plugin
+```
+
+The plugin is safe to install globally — it only activates in projects that have a `chronicles/` directory. To start using chronicles in a project, create the directory:
+
+```bash
+mkdir chronicles
+```
+
+The plugin installs two hooks:
+- **SessionStart** — injects an orientation blurb and `GOLD.md` content into the agent's context
+- **SessionEnd** — ingests the session transcript into the wiki via `uvx`
+
+### Manual (pip)
+
 ```bash
 pip install chronicles          # base (LLM-based dedup)
 pip install chronicles[tfidf]   # recommended (fast local dedup via scikit-learn)
@@ -17,8 +41,8 @@ pip install chronicles[tfidf]   # recommended (fast local dedup via scikit-learn
 # Ingest a session transcript
 chronicles ingest path/to/session.jsonl
 
-# Auto-discover recent sessions
-chronicles ingest --since 7d
+# Auto-discover recent sessions (most recent only)
+chronicles ingest --since 7d --last 1
 
 # Run wiki maintenance standalone
 chronicles lint --chronicles-dir chronicles
