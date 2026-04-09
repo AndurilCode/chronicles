@@ -110,10 +110,13 @@ def _check_wikilinks(articles: list[dict]) -> list[str]:
         body_match = re.match(r"^---\n.*?\n---\n(.*)", text, re.DOTALL)
         body = body_match.group(1) if body_match else text
 
+        # Strip code blocks and inline code before scanning for wikilinks
+        body = re.sub(r"```.*?```", "", body, flags=re.DOTALL)
+        body = re.sub(r"`[^`]+`", "", body)
+
         # Find all [[wikilinks]] in the body
         links = re.findall(r"\[\[([^\]]+)\]\]", body)
         for link in links:
-            # Wikilinks in body (not inside sources in frontmatter) should resolve
             if link not in known:
                 warnings.append(
                     f"{article['path'].name}: broken wikilink [[{link}]]"
@@ -214,15 +217,34 @@ def _get_similarity_engine(config) -> BaseSimilarityEngine | None:
         return None
 
 
+def _get_confirm_engine(config) -> BaseSimilarityEngine | None:
+    """Get the confirmation engine for two-stage dedup. Returns None if not configured."""
+    confirm = config.similarity.confirm_engine
+    if not confirm:
+        return None
+    try:
+        from chronicles.config import SimilarityConfig
+        confirm_config = SimilarityConfig(
+            engine=confirm,
+            threshold=config.similarity.confirm_threshold,
+        )
+        return get_similarity_engine(confirm_config, llm_config=config.llm)
+    except (ValueError, Exception) as e:
+        log.warning("Confirm engine unavailable: %s", e)
+        return None
+
+
 def _detect_and_merge_duplicates(
-    articles: list[dict], report: LintReport, similarity_engine: BaseSimilarityEngine | None = None,
+    articles: list[dict], report: LintReport,
+    similarity_engine: BaseSimilarityEngine | None = None,
+    confirm_engine: BaseSimilarityEngine | None = None,
 ) -> list[dict]:
     """Dispatcher: use semantic dedup when engine is available, else fallback."""
     if len(articles) < 2:
         return articles
     if similarity_engine is not None:
         try:
-            return _semantic_dedup(articles, report, similarity_engine)
+            return _semantic_dedup(articles, report, similarity_engine, confirm_engine)
         except Exception as e:
             log.warning("Semantic dedup failed, using fallback: %s", e)
     return _fallback_dedup(articles, report)
@@ -230,11 +252,12 @@ def _detect_and_merge_duplicates(
 
 def _semantic_dedup(
     articles: list[dict], report: LintReport, engine: BaseSimilarityEngine,
+    confirm_engine: BaseSimilarityEngine | None = None,
 ) -> list[dict]:
-    """Merge duplicate articles using semantic similarity via the engine.
+    """Merge duplicate articles using semantic similarity.
 
-    Pre-filters by article type so only same-type pairs are scored,
-    reducing O(n²) to O(sum of type_group²) — typically much smaller.
+    Two-stage when confirm_engine is set: fast engine filters candidates,
+    confirm_engine validates. Pre-filters by article type.
     """
     # Group articles by type — only same-type articles can merge
     type_groups: dict[str, list[int]] = {}
@@ -250,28 +273,45 @@ def _semantic_dedup(
         first_para = body_match.group(1).strip() if body_match else ""
         texts.append(f"{title}: {first_para}")
 
-    # Score only within same-type groups
-    all_pairs: list[tuple[int, int, float]] = []
+    # Stage 1: fast filter within same-type groups
+    candidates: list[tuple[int, int, float]] = []
     for group_indices in type_groups.values():
         if len(group_indices) < 2:
             continue
         group_texts = [texts[i] for i in group_indices]
         group_pairs = engine.batch_score(group_texts, engine.config.threshold)
-        # Map group-local indices back to global indices
         for gi, gj, score in group_pairs:
-            all_pairs.append((group_indices[gi], group_indices[gj], score))
+            candidates.append((group_indices[gi], group_indices[gj], score))
+
+    if not candidates:
+        return articles
+
+    # Stage 2: confirm with LLM if configured
+    confirmed: list[tuple[int, int, float]] = []
+    if confirm_engine is not None and candidates:
+        log.info("Dedup: %d candidates from fast filter, confirming with %s...",
+                 len(candidates), confirm_engine.__class__.__name__)
+        for i, j, fast_score in candidates:
+            confirm_score = confirm_engine.score(texts[i], texts[j])
+            if confirm_score >= confirm_engine.config.threshold:
+                confirmed.append((i, j, confirm_score))
+            else:
+                log.debug("Dedup: rejected %s vs %s (fast=%.2f, confirm=%.2f)",
+                          articles[i]["path"].stem, articles[j]["path"].stem,
+                          fast_score, confirm_score)
+    else:
+        confirmed = candidates
 
     # Sort by score descending so highest-similarity pairs merge first
-    all_pairs.sort(key=lambda t: -t[2])
+    confirmed.sort(key=lambda t: -t[2])
 
     merged_indices: set[int] = set()
-    for i, j, score in all_pairs:
+    for i, j, score in confirmed:
         if i in merged_indices or j in merged_indices:
             continue
         a, b = articles[i], articles[j]
         report.warnings.append(f"Merged duplicate: {b['path'].stem} into {a['path'].stem} (similarity: {score:.2f})")
         _merge_article(a, b)
-        # Add supersedes relationship on the surviving article
         existing_rels = _parse_relationships(a["text"])
         existing_rels.append({"type": "supersedes", "target": b["path"].stem})
         _write_relationships(a, existing_rels)
@@ -464,6 +504,16 @@ def _infer_relationships(
                 shared = my_tags & other_tags
                 if shared and ("related-to", other_name) not in existing_targets:
                     new_rels.append({"type": "related-to", "target": other_name})
+
+        # Deduplicate: remove related-to when a stronger relationship exists to same target
+        strong_targets = {
+            r.get("target") for r in new_rels
+            if r["type"] in ("depends-on", "generalizes", "supersedes", "contradicts")
+        }
+        new_rels = [
+            r for r in new_rels
+            if not (r["type"] == "related-to" and r.get("target") in strong_targets)
+        ]
 
         if new_rels != existing_rels:
             _write_relationships(article, new_rels)
@@ -958,8 +1008,9 @@ def lint(chronicles_dir: Path) -> LintReport:
 
     renderer = TemplateRenderer()
 
-    # 2. Get similarity engine
+    # 2. Get similarity engines
     similarity_engine = _get_similarity_engine(config)
+    confirm_engine = _get_confirm_engine(config)
 
     # 3. Load and validate articles
     articles_dir = chronicles_dir / "wiki" / "articles"
@@ -967,8 +1018,8 @@ def lint(chronicles_dir: Path) -> LintReport:
     report.errors.extend(load_errors)
     log.info("Loaded %d wiki article(s)", len(articles))
 
-    # 4. Semantic dedup
-    articles = _detect_and_merge_duplicates(articles, report, similarity_engine)
+    # 4. Semantic dedup (two-stage if confirm engine configured)
+    articles = _detect_and_merge_duplicates(articles, report, similarity_engine, confirm_engine)
 
     # 5. Link integrity
     warnings = _check_wikilinks(articles)

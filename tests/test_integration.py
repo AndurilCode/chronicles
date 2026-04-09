@@ -161,8 +161,8 @@ def test_ingest_with_relationships(chronicles_dir):
     assert "type: supersedes" in content
     assert "target: old-pattern" in content
 
-    # Verify related-to was inferred by linter (both articles share "auth" tag)
-    assert "type: related-to" in content
+    # related-to is correctly suppressed when supersedes exists to same target
+    assert "type: related-to" not in content
 
 
 def test_conflict_resolution_lifecycle(chronicles_dir):

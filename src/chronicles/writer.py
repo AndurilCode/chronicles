@@ -123,11 +123,25 @@ def write_wiki_pages(
         elif record_ref not in data["sources"]:
             data["sources"].append(record_ref)
 
+        # Cap confidence at medium — only the linter promotes to high
+        if data.get("confidence") == "high":
+            data["confidence"] = "medium"
+
         # Build template context with defaults for required fields
         relationships = instruction.get("relationships", [])
         context = _build_wiki_context(data, date, relationships=relationships)
 
         if action in ("create", "update"):
+            # Preserve sources from existing article if overwriting
+            if out_path.exists():
+                existing_text = out_path.read_text()
+                existing_fm = _parse_frontmatter(existing_text)
+                if existing_fm:
+                    existing_sources = existing_fm.get("sources", [])
+                    for s in existing_sources:
+                        s_norm = _normalize_source_ref(s)
+                        if s_norm and s_norm not in context["sources"]:
+                            context["sources"].append(s_norm)
             content = renderer.render(template_name, context)
             out_path.write_text(content)
             log.info("  wiki: %s (%s, confidence=%s)",
@@ -171,6 +185,30 @@ def write_wiki_pages(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _parse_frontmatter(text: str) -> dict | None:
+    """Extract and parse YAML frontmatter from markdown text."""
+    import yaml
+    match = re.match(r"^---\n(.*?)\n---\n", text, re.DOTALL)
+    if not match:
+        return None
+    try:
+        return yaml.safe_load(match.group(1)) or {}
+    except yaml.YAMLError:
+        return None
+
+
+def _normalize_source_ref(source) -> str:
+    """Normalize a source reference to a plain string."""
+    if isinstance(source, list):
+        while isinstance(source, list) and source:
+            source = source[0]
+    s = str(source).strip('"')
+    match = re.search(r"\[\[([^\]]+)\]\]", s)
+    if match:
+        return match.group(1)
+    return s
+
 
 def _update_frontmatter(text: str, date: str) -> str:
     """Increment record_count and set last_updated in YAML frontmatter."""
