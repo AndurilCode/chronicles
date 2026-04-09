@@ -108,6 +108,7 @@ RULES:
 - "confidence": use "medium" when the user explicitly stated it; "low" when inferred
 - "type" MUST be exactly one of: convention, decision, pattern, trap, workaround, concept
 - "status" MUST be exactly one of: complete, partial, failed, exploratory
+- Tags should include 1-2 broad domain tags (e.g. architecture, extraction, parsing, pipeline, wiki, testing) plus 1-2 specific tags. Broad tags help articles cluster into categories; specific tags distinguish them.
 - If EXISTING WIKI ARTICLES are listed below, REUSE their tags and use "action": "update" for overlapping topics
 - If a new article supersedes or depends on an EXISTING article, add "relationships" with the existing slug as target
 - Valid relationship types: contradicts, supersedes, depends-on, generalizes, related-to
