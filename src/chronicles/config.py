@@ -32,7 +32,7 @@ class EnrichConfig:
 @dataclass
 class SimilarityConfig:
     engine: str = "tfidf"
-    threshold: float = 0.15
+    threshold: float = 0.2
     confirm_engine: str = ""
     confirm_threshold: float = 0.7
 
@@ -98,7 +98,7 @@ def load_config(chronicles_dir: Path) -> ChroniclesConfig:
     sim_raw = raw.get("similarity", {})
     similarity = SimilarityConfig(
         engine=sim_raw.get("engine", "tfidf"),
-        threshold=sim_raw.get("threshold", 0.15),
+        threshold=sim_raw.get("threshold", 0.2),
         confirm_engine=sim_raw.get("confirm_engine", ""),
         confirm_threshold=sim_raw.get("confirm_threshold", 0.7),
     )
