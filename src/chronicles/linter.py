@@ -249,6 +249,67 @@ def _detect_stale(chronicles_dir: Path, articles: list[dict], report: LintReport
             )
 
 
+def _regenerate_categories(
+    chronicles_dir: Path,
+    articles: list[dict[str, Any]],
+    renderer: TemplateRenderer,
+) -> None:
+    """Rebuild wiki/categories/ index pages by grouping articles by tag."""
+    categories_dir = chronicles_dir / "wiki" / "categories"
+    categories_dir.mkdir(parents=True, exist_ok=True)
+
+    # Group articles by tag
+    tag_to_articles: dict[str, list[str]] = {}
+    tag_to_questions: dict[str, list[str]] = {}
+    for article in articles:
+        fm = article["frontmatter"]
+        tags = fm.get("tags", [])
+        if isinstance(tags, str):
+            tags = [tags]
+        title = article["path"].stem
+        for tag in tags:
+            tag_to_articles.setdefault(tag, []).append(title)
+
+    # Also scan queries
+    queries_dir = chronicles_dir / "wiki" / "queries"
+    if queries_dir.exists():
+        for query_path in queries_dir.glob("*.md"):
+            content = query_path.read_text()
+            fm_match = re.match(r"^---\n(.+?)\n---", content, re.DOTALL)
+            if fm_match:
+                try:
+                    fm = yaml.safe_load(fm_match.group(1))
+                    tags = fm.get("tags", [])
+                    if isinstance(tags, str):
+                        tags = [tags]
+                    for tag in tags:
+                        tag_to_questions.setdefault(tag, []).append(query_path.stem)
+                except yaml.YAMLError:
+                    pass
+
+    # Remove old category files
+    for old in categories_dir.glob("*.md"):
+        old.unlink()
+
+    # Generate one category page per tag
+    all_tags = sorted(set(list(tag_to_articles.keys()) + list(tag_to_questions.keys())))
+    for tag in all_tags:
+        article_list = sorted(tag_to_articles.get(tag, []))
+        question_list = sorted(tag_to_questions.get(tag, []))
+
+        # Title: capitalize and replace hyphens
+        title = tag.replace("-", " ").replace("_", " ").title()
+
+        data = {
+            "tags": [tag],
+            "title": title,
+            "articles": article_list,
+            "open_questions": question_list,
+        }
+        cat_path = categories_dir / f"{tag}.md"
+        cat_path.write_text(renderer.render("wiki_category", data))
+
+
 def _regenerate_gold(
     chronicles_dir: Path,
     articles: list[dict],
@@ -331,6 +392,8 @@ def lint(chronicles_dir: Path) -> LintReport:
 
     _detect_contested(chronicles_dir, articles, report)
     _detect_stale(chronicles_dir, articles, report)
+
+    _regenerate_categories(chronicles_dir, articles, renderer)
 
     gold_count = _regenerate_gold(chronicles_dir, articles, renderer)
     report.gold_count = gold_count
