@@ -51,6 +51,12 @@ class GapsConfig:
 
 
 @dataclass
+class SignalsConfig:
+    max_active: int = 50
+    demoted_retention_days: int = 90
+
+
+@dataclass
 class ChroniclesConfig:
     llm: LLMConfig
     sources: list[str]
@@ -60,6 +66,7 @@ class ChroniclesConfig:
     similarity: SimilarityConfig
     decay: DecayConfig
     gaps: GapsConfig
+    signals: SignalsConfig
     chronicles_dir: Path
 
 
@@ -116,6 +123,12 @@ def load_config(chronicles_dir: Path) -> ChroniclesConfig:
         git_lookback_days=gaps_raw.get("git_lookback_days", 90),
     )
 
+    signals_raw = raw.get("signals", {})
+    signals = SignalsConfig(
+        max_active=signals_raw.get("max_active", 50),
+        demoted_retention_days=signals_raw.get("demoted_retention_days", 90),
+    )
+
     return ChroniclesConfig(
         llm=llm,
         sources=sources,
@@ -125,5 +138,6 @@ def load_config(chronicles_dir: Path) -> ChroniclesConfig:
         similarity=similarity,
         decay=decay,
         gaps=gaps,
+        signals=signals,
         chronicles_dir=chronicles_dir,
     )

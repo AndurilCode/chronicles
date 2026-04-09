@@ -63,3 +63,27 @@ def test_load_config_new_sections_override(tmp_path):
     assert config.decay.high_to_medium_days == 90
     assert config.decay.medium_to_low_days == 270  # default
     assert config.gaps.enabled is False
+
+
+def test_signals_config_defaults(chronicles_dir):
+    from chronicles.config import load_config
+    config = load_config(chronicles_dir)
+    assert config.signals.max_active == 50
+    assert config.signals.demoted_retention_days == 90
+
+
+def test_signals_config_custom(tmp_path):
+    from chronicles.config import load_config
+    for d in ["records", "archives", "wiki/articles", "wiki/categories", "wiki/queries"]:
+        (tmp_path / d).mkdir(parents=True)
+    (tmp_path / "config.yaml").write_text(
+        "llm:\n"
+        "  provider: claude-code\n"
+        "  model: haiku\n"
+        "signals:\n"
+        "  max_active: 30\n"
+        "  demoted_retention_days: 60\n"
+    )
+    config = load_config(tmp_path)
+    assert config.signals.max_active == 30
+    assert config.signals.demoted_retention_days == 60
