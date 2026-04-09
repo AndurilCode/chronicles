@@ -54,14 +54,37 @@ RULES for wiki_instructions:
 - "implications" should be actionable (what to do, what to avoid, when this applies)
 - For questions asked by the user and answered, use path "wiki/queries/question-slug.md"
 - Use "confidence": "medium" when the user explicitly stated the knowledge; "low" when inferred by the agent
+- If EXISTING WIKI ARTICLES are listed below, REUSE their tags when relevant instead of inventing new ones
+- If a discovery overlaps with an existing article, use "action": "update" with the EXISTING article path instead of creating a duplicate
+- Reference existing articles by their slug in your evidence or implications when relevant
 """
 
 
 class CopilotCLIExtractor(BaseExtractor):
     """Uses the GitHub Copilot CLI (`copilot`) to extract transcript data."""
 
-    def _build_prompt(self, transcript: CleanedTranscript) -> str:
-        lines: list[str] = [_SYSTEM_PROMPT, "", "--- TRANSCRIPT ---", ""]
+    def _build_prompt(
+        self,
+        transcript: CleanedTranscript,
+        wiki_context: list[dict] | None = None,
+    ) -> str:
+        lines: list[str] = [_SYSTEM_PROMPT]
+
+        # Inject existing wiki context so the LLM can reuse tags and reference articles
+        if wiki_context:
+            lines.append("")
+            lines.append("--- EXISTING WIKI ARTICLES ---")
+            for article in wiki_context:
+                tags = ", ".join(article.get("tags", []))
+                lines.append(
+                    f"- {article['title']} (type={article.get('type', '?')}, "
+                    f"tags=[{tags}], path={article.get('path', '?')})"
+                )
+            lines.append("--- END EXISTING WIKI ---")
+
+        lines.append("")
+        lines.append("--- TRANSCRIPT ---")
+        lines.append("")
         for chunk in transcript.chunks:
             for msg in chunk:
                 lines.append(self._format_message(msg))
@@ -86,13 +109,24 @@ class CopilotCLIExtractor(BaseExtractor):
 
     def _parse_response(self, raw: str) -> ExtractionResult:
         text = raw.strip()
+        if not text:
+            raise RuntimeError("LLM returned empty response")
         # Strip markdown fences if present
         if text.startswith("```"):
             text = "\n".join(text.split("\n")[1:])
         if text.endswith("```"):
             text = "\n".join(text.split("\n")[:-1])
         text = text.strip()
-        data = json.loads(text)
+        # Find JSON object in response (LLM may prepend/append text)
+        start = text.find("{")
+        end = text.rfind("}") + 1
+        if start == -1 or end == 0:
+            raise RuntimeError(f"No JSON object found in LLM response: {text[:200]}")
+        text = text[start:end]
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"Failed to parse LLM JSON: {e}\nResponse: {text[:500]}") from e
         return ExtractionResult(
             branch=data["branch"],
             status=data["status"],
@@ -108,12 +142,21 @@ class CopilotCLIExtractor(BaseExtractor):
             wiki_instructions=data["wiki_instructions"],
         )
 
-    def extract(self, transcript: CleanedTranscript) -> ExtractionResult:
-        prompt = self._build_prompt(transcript)
+    def extract(
+        self,
+        transcript: CleanedTranscript,
+        wiki_context: list[dict] | None = None,
+    ) -> ExtractionResult:
+        prompt = self._build_prompt(transcript, wiki_context)
         cmd = ["copilot", "-p", prompt, "--model", self.config.model]
+        import logging
+        _log = logging.getLogger("chronicles")
         result = subprocess.run(cmd, capture_output=True, text=True, check=False)
         if result.returncode != 0:
             raise RuntimeError(
                 f"copilot CLI failed (exit {result.returncode}): {result.stderr}"
             )
+        if result.stderr:
+            _log.debug("copilot stderr: %s", result.stderr[:500])
+        _log.debug("copilot stdout length: %d chars", len(result.stdout))
         return self._parse_response(result.stdout)

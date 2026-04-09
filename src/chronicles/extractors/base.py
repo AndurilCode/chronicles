@@ -14,5 +14,13 @@ class BaseExtractor(ABC):
         self.config = config
 
     @abstractmethod
-    def extract(self, transcript: CleanedTranscript) -> ExtractionResult:
-        """Extract structured information from a cleaned transcript."""
+    def extract(
+        self,
+        transcript: CleanedTranscript,
+        wiki_context: list[dict] | None = None,
+    ) -> ExtractionResult:
+        """Extract structured information from a cleaned transcript.
+
+        wiki_context: existing wiki articles as [{"title": ..., "tags": [...], "type": ...}]
+        so the LLM can reuse tags and reference or update existing articles.
+        """

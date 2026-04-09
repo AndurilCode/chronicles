@@ -263,6 +263,64 @@ def _detect_stale(chronicles_dir: Path, articles: list[dict], report: LintReport
             )
 
 
+def _add_related_sections(articles: list[dict[str, Any]]) -> int:
+    """Add or update ## Related sections based on tag overlap."""
+    # Build tag → article mapping
+    tag_to_articles: dict[str, list[str]] = {}
+    article_tags: dict[str, set[str]] = {}
+    for article in articles:
+        fm = article["frontmatter"]
+        tags = fm.get("tags", [])
+        if isinstance(tags, str):
+            tags = [tags]
+        name = article["path"].stem
+        article_tags[name] = set(tags)
+        for tag in tags:
+            tag_to_articles.setdefault(tag, []).append(name)
+
+    updated = 0
+    for article in articles:
+        name = article["path"].stem
+        my_tags = article_tags.get(name, set())
+        if not my_tags:
+            continue
+
+        # Find related articles ranked by tag overlap count
+        related_scores: dict[str, int] = {}
+        for tag in my_tags:
+            for other in tag_to_articles.get(tag, []):
+                if other != name:
+                    related_scores[other] = related_scores.get(other, 0) + 1
+
+        if not related_scores:
+            continue
+
+        # Sort by overlap count descending, then alphabetically
+        related = sorted(related_scores.keys(), key=lambda n: (-related_scores[n], n))
+
+        # Build the Related section
+        related_lines = ["## Related"]
+        for r in related:
+            shared = article_tags.get(r, set()) & my_tags
+            shared_str = ", ".join(sorted(shared))
+            related_lines.append(f"- [[{r}]] ({shared_str})")
+        related_section = "\n".join(related_lines) + "\n"
+
+        # Replace existing Related section or append
+        text = article["text"]
+        related_re = re.compile(r"## Related\n(?:- \[\[.+\]\].*\n)*", re.MULTILINE)
+        if related_re.search(text):
+            text = related_re.sub(related_section, text)
+        else:
+            text = text.rstrip("\n") + "\n\n" + related_section
+
+        article["path"].write_text(text)
+        article["text"] = text
+        updated += 1
+
+    return updated
+
+
 def _regenerate_categories(
     chronicles_dir: Path,
     articles: list[dict[str, Any]],
@@ -417,6 +475,10 @@ def lint(chronicles_dir: Path) -> LintReport:
     cat_dir = chronicles_dir / "wiki" / "categories"
     cat_count = len(list(cat_dir.glob("*.md"))) if cat_dir.exists() else 0
     log.info("Regenerated %d category page(s)", cat_count)
+
+    related_count = _add_related_sections(articles)
+    if related_count:
+        log.info("Added Related sections to %d article(s)", related_count)
 
     gold_count = _regenerate_gold(chronicles_dir, articles, renderer)
     report.gold_count = gold_count

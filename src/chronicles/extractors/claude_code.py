@@ -17,8 +17,12 @@ class ClaudeCodeExtractor(BaseExtractor):
         # Reuse prompt-building and response-parsing from CopilotCLIExtractor
         self._helper = CopilotCLIExtractor(config)
 
-    def extract(self, transcript: CleanedTranscript) -> ExtractionResult:
-        prompt = self._helper._build_prompt(transcript)
+    def extract(
+        self,
+        transcript: CleanedTranscript,
+        wiki_context: list[dict] | None = None,
+    ) -> ExtractionResult:
+        prompt = self._helper._build_prompt(transcript, wiki_context)
         cmd = ["claude", "--print", prompt]
         result = subprocess.run(cmd, capture_output=True, text=True, check=False)
         if result.returncode != 0:

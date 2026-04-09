@@ -66,7 +66,7 @@ def _parse_and_clean_one(args: tuple[Path, str | None]):
     cleaned = clean_transcript(transcript)
     total_msgs = sum(len(c) for c in cleaned.chunks)
     stripped = len(transcript.messages) - total_msgs
-    _log.info("Cleaned → %d messages in %d chunk(s) (stripped %d tool results)",
+    _log.info("Cleaned → %d messages in %d turn(s) (filtered %d)",
               total_msgs, len(cleaned.chunks), stripped)
     return cleaned
 
@@ -78,6 +78,47 @@ def _parse_and_clean_all(paths: list[Path], source_override: str | None):
     else:
         with ProcessPoolExecutor() as pool:
             yield from pool.map(_parse_and_clean_one, [(p, source_override) for p in paths])
+
+
+def _load_wiki_context(chronicles_dir: Path) -> list[dict]:
+    """Load existing wiki article titles, tags, and types for extractor context."""
+    import yaml
+
+    articles_dir = chronicles_dir / "wiki" / "articles"
+    if not articles_dir.exists():
+        return []
+
+    context = []
+    for path in sorted(articles_dir.glob("*.md")):
+        text = path.read_text()
+        import re
+        match = re.match(r"^---\n(.+?)\n---", text, re.DOTALL)
+        if not match:
+            continue
+        try:
+            fm = yaml.safe_load(match.group(1))
+        except yaml.YAMLError:
+            continue
+
+        # Extract title from first heading
+        title = path.stem.replace("-", " ").title()
+        for line in text.split("\n"):
+            if line.startswith("# "):
+                title = line[2:].strip()
+                break
+
+        tags = fm.get("tags", [])
+        if isinstance(tags, str):
+            tags = [tags]
+
+        context.append({
+            "title": title,
+            "type": fm.get("type", ""),
+            "tags": tags,
+            "path": f"wiki/articles/{path.name}",
+        })
+
+    return context
 
 
 def _ensure_chronicles_dir(chronicles_dir: Path) -> None:
@@ -128,9 +169,17 @@ def _run_ingest(args: argparse.Namespace) -> None:
     source_override = args.source
     cleaned_transcripts = list(_parse_and_clean_all(paths, source_override))
 
+    # Load existing wiki articles for context
+    wiki_context = _load_wiki_context(chronicles_dir)
+    if wiki_context:
+        log.info("Loaded %d existing wiki article(s) for context", len(wiki_context))
+
     log.info("Extracting via %s (model: %s)...", config.llm.provider, config.llm.model)
     with ThreadPoolExecutor(max_workers=config.llm.max_concurrent) as pool:
-        results = list(pool.map(extractor.extract, cleaned_transcripts))
+        results = list(pool.map(
+            lambda ct: extractor.extract(ct, wiki_context),
+            cleaned_transcripts,
+        ))
 
     for cleaned, result in zip(cleaned_transcripts, results):
         date_str = cleaned.metadata.timestamp_start[:10]
