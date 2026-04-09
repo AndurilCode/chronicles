@@ -1,0 +1,225 @@
+"""Linter — validates wiki structure, manages confidence lifecycle, regenerates GOLD.md."""
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+from datetime import date
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from chronicles.config import load_config
+from chronicles.templates import TemplateRenderer
+
+# Maps article types to GOLD.md section names
+TYPE_TO_SECTION: dict[str, str] = {
+    "convention": "Conventions",
+    "pattern": "Patterns",
+    "decision": "Decisions",
+    "constraint": "Constraints",
+    "preference": "Preferences",
+    "tool": "Tools",
+    "workflow": "Workflows",
+    "concept": "Concepts",
+}
+
+_DEFAULT_SECTION = "Other"
+
+
+@dataclass
+class LintReport:
+    errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    promotions: list[str] = field(default_factory=list)
+    gold_count: int = 0
+
+
+def _today() -> str:
+    """Return current date as ISO string."""
+    return date.today().isoformat()
+
+
+def _parse_frontmatter(text: str) -> dict[str, Any] | None:
+    """Extract and parse YAML frontmatter from markdown text. Returns None if absent."""
+    match = re.match(r"^---\n(.*?)\n---\n", text, re.DOTALL)
+    if not match:
+        return None
+    try:
+        return yaml.safe_load(match.group(1)) or {}
+    except yaml.YAMLError:
+        return None
+
+
+def _load_articles(articles_dir: Path) -> tuple[list[dict], list[str]]:
+    """Load wiki articles and validate frontmatter.
+
+    Returns (articles, errors) where each article dict contains path, frontmatter, and body.
+    """
+    articles: list[dict] = []
+    errors: list[str] = []
+
+    if not articles_dir.exists():
+        return articles, errors
+
+    for path in sorted(articles_dir.glob("*.md")):
+        text = path.read_text()
+        fm = _parse_frontmatter(text)
+        if fm is None:
+            errors.append(f"{path.name}: missing or invalid frontmatter")
+            continue
+        articles.append({"path": path, "frontmatter": fm, "text": text})
+
+    return articles, errors
+
+
+def _check_wikilinks(articles: list[dict]) -> list[str]:
+    """Check for broken [[wikilinks]] in article bodies.
+
+    Returns list of warnings for links pointing to non-existent articles.
+    """
+    # Build set of known article names (stem without .md)
+    known = {a["path"].stem for a in articles}
+    warnings: list[str] = []
+
+    for article in articles:
+        text = article["text"]
+        # Strip frontmatter before scanning body
+        body_match = re.match(r"^---\n.*?\n---\n(.*)", text, re.DOTALL)
+        body = body_match.group(1) if body_match else text
+
+        # Find all [[wikilinks]] in the body
+        links = re.findall(r"\[\[([^\]]+)\]\]", body)
+        for link in links:
+            # Wikilinks in body (not inside sources in frontmatter) should resolve
+            if link not in known:
+                warnings.append(
+                    f"{article['path'].name}: broken wikilink [[{link}]]"
+                )
+
+    return warnings
+
+
+def _manage_confidence(
+    articles: list[dict],
+    promotion_threshold: int,
+) -> list[str]:
+    """Promote article confidence levels based on source count.
+
+    - low -> medium: 2+ sources
+    - medium -> high: promotion_threshold+ sources
+
+    Returns list of promotion messages. Mutates article frontmatter and writes files.
+    """
+    promotions: list[str] = []
+
+    for article in articles:
+        fm = article["frontmatter"]
+        path: Path = article["path"]
+        confidence = fm.get("confidence", "low")
+        sources = fm.get("sources", []) or []
+        source_count = len(sources)
+
+        new_confidence = confidence
+
+        if confidence == "low" and source_count >= 2:
+            new_confidence = "medium"
+        elif confidence == "medium" and source_count >= promotion_threshold:
+            new_confidence = "high"
+
+        if new_confidence != confidence:
+            # Update the file text — replace confidence line in frontmatter
+            old_text = article["text"]
+            new_text = re.sub(
+                r"^confidence: \S+",
+                f"confidence: {new_confidence}",
+                old_text,
+                count=1,
+                flags=re.MULTILINE,
+            )
+            path.write_text(new_text)
+            article["text"] = new_text
+            article["frontmatter"] = {**fm, "confidence": new_confidence}
+            promotions.append(
+                f"{path.stem}: {confidence} -> {new_confidence} ({source_count} sources)"
+            )
+
+    return promotions
+
+
+def _regenerate_gold(
+    chronicles_dir: Path,
+    articles: list[dict],
+    renderer: TemplateRenderer,
+) -> int:
+    """Rebuild GOLD.md from high-confidence articles.
+
+    Returns count of promoted (high-confidence) articles written to GOLD.md.
+    """
+    high_articles = [
+        a for a in articles if a["frontmatter"].get("confidence") == "high"
+    ]
+
+    # Group by article type -> section name
+    groups_dict: dict[str, list[dict]] = {}
+    for article in high_articles:
+        article_type = article["frontmatter"].get("type", "")
+        section = TYPE_TO_SECTION.get(article_type, _DEFAULT_SECTION)
+        groups_dict.setdefault(section, []).append(article)
+
+    # Build list of (section_name, article_data_list) sorted by section name
+    groups = []
+    for section_name, section_articles in sorted(groups_dict.items()):
+        article_data = []
+        for a in section_articles:
+            fm = a["frontmatter"]
+            # Extract first line of body as summary (after the heading)
+            body_match = re.match(r"^---\n.*?\n---\n\s*#[^\n]*\n\n(.+?)(\n|$)", a["text"], re.DOTALL)
+            summary = ""
+            if body_match:
+                summary = body_match.group(1).strip().split("\n")[0]
+            article_data.append({
+                "title": a["path"].stem,
+                "summary": summary,
+                "type": fm.get("type", ""),
+                "confidence": fm.get("confidence", "high"),
+            })
+        groups.append((section_name, article_data))
+
+    gold_path = chronicles_dir / "GOLD.md"
+    content = renderer.render(
+        "gold",
+        {
+            "date": _today(),
+            "count": len(high_articles),
+            "groups": groups,
+        },
+    )
+    gold_path.write_text(content)
+    return len(high_articles)
+
+
+def lint(chronicles_dir: Path) -> LintReport:
+    """Main linter function.
+
+    Loads config, loads articles, checks wikilinks, manages confidence, regenerates GOLD.md.
+    """
+    report = LintReport()
+
+    config = load_config(chronicles_dir)
+    renderer = TemplateRenderer()
+
+    articles_dir = chronicles_dir / "wiki" / "articles"
+    articles, load_errors = _load_articles(articles_dir)
+    report.errors.extend(load_errors)
+
+    warnings = _check_wikilinks(articles)
+    report.warnings.extend(warnings)
+
+    promotions = _manage_confidence(articles, config.confidence.promotion_threshold)
+    report.promotions.extend(promotions)
+
+    gold_count = _regenerate_gold(chronicles_dir, articles, renderer)
+    report.gold_count = gold_count
+
+    return report
