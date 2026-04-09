@@ -227,8 +227,18 @@ def _detect_and_merge_duplicates(
 def _semantic_dedup(
     articles: list[dict], report: LintReport, engine: BaseSimilarityEngine,
 ) -> list[dict]:
-    """Merge duplicate articles using semantic similarity via the engine."""
-    # Build comparison texts: "title: first_paragraph"
+    """Merge duplicate articles using semantic similarity via the engine.
+
+    Pre-filters by article type so only same-type pairs are scored,
+    reducing O(n²) to O(sum of type_group²) — typically much smaller.
+    """
+    # Group articles by type — only same-type articles can merge
+    type_groups: dict[str, list[int]] = {}
+    for idx, article in enumerate(articles):
+        art_type = article["frontmatter"].get("type", "")
+        type_groups.setdefault(art_type, []).append(idx)
+
+    # Build comparison texts
     texts: list[str] = []
     for article in articles:
         title = article["path"].stem
@@ -236,19 +246,26 @@ def _semantic_dedup(
         first_para = body_match.group(1).strip() if body_match else ""
         texts.append(f"{title}: {first_para}")
 
-    pairs = engine.batch_score(texts, engine.config.threshold)
+    # Score only within same-type groups
+    all_pairs: list[tuple[int, int, float]] = []
+    for group_indices in type_groups.values():
+        if len(group_indices) < 2:
+            continue
+        group_texts = [texts[i] for i in group_indices]
+        group_pairs = engine.batch_score(group_texts, engine.config.threshold)
+        # Map group-local indices back to global indices
+        for gi, gj, score in group_pairs:
+            all_pairs.append((group_indices[gi], group_indices[gj], score))
+
     # Sort by score descending so highest-similarity pairs merge first
-    pairs.sort(key=lambda t: t[2], reverse=True)
+    all_pairs.sort(key=lambda t: -t[2])
 
     merged_indices: set[int] = set()
-    for i, j, score in pairs:
+    for i, j, score in all_pairs:
         if i in merged_indices or j in merged_indices:
             continue
         a, b = articles[i], articles[j]
-        # Same type filter: never merge articles of different types
-        if a["frontmatter"].get("type") != b["frontmatter"].get("type"):
-            continue
-        report.warnings.append(f"Merged duplicate: {b['path'].stem} into {a['path'].stem}")
+        report.warnings.append(f"Merged duplicate: {b['path'].stem} into {a['path'].stem} (similarity: {score:.2f})")
         _merge_article(a, b)
         # Add supersedes relationship on the surviving article
         existing_rels = _parse_relationships(a["text"])

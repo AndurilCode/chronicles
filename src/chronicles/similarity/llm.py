@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import re
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 
 from chronicles.config import LLMConfig, SimilarityConfig
 from chronicles.similarity.base import BaseSimilarityEngine
@@ -34,10 +35,18 @@ class LLMSimilarityEngine(BaseSimilarityEngine):
     def batch_score(
         self, items: list[str], threshold: float
     ) -> list[tuple[int, int, float]]:
+        pairs = [(i, j) for i in range(len(items)) for j in range(i + 1, len(items))]
+        if not pairs:
+            return []
+
+        def _score_pair(pair: tuple[int, int]) -> tuple[int, int, float]:
+            i, j = pair
+            return (i, j, self.score(items[i], items[j]))
+
+        max_workers = self.llm_config.max_concurrent
         results: list[tuple[int, int, float]] = []
-        for i in range(len(items)):
-            for j in range(i + 1, len(items)):
-                s = self.score(items[i], items[j])
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            for i, j, s in pool.map(_score_pair, pairs):
                 if s >= threshold:
                     results.append((i, j, s))
         return results
