@@ -7,7 +7,9 @@
   "hooks": "../hooks/claude-code.json",
   "userConfig": {
     "chronicles_dir": {
+      "title": "Chronicles directory",
       "description": "Path to chronicles wiki directory (relative to project root)",
+      "type": "string",
       "default": "chronicles"
     }
   }
