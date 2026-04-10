@@ -132,9 +132,13 @@ def prompt_ollama() -> tuple[str, int]:
     base_url = input("Ollama base URL [http://localhost:11434]: ").strip()
     if not base_url:
         base_url = "http://localhost:11434"
-    timeout_str = input("Ollama timeout in seconds [300]: ").strip()
-    timeout = int(timeout_str) if timeout_str else 300
-    return base_url, timeout
+    while True:
+        timeout_str = input("Ollama timeout in seconds [300]: ").strip()
+        if not timeout_str:
+            return base_url, 300
+        if timeout_str.isdigit():
+            return base_url, int(timeout_str)
+        print("Invalid timeout. Enter a number.")
 
 
 def run_init(
@@ -150,6 +154,7 @@ def run_init(
     If provider/model/sources are None, prompts interactively.
     """
     # Interactive prompts for missing values
+    interactive = provider is None or model is None or sources is None
     try:
         if provider is None:
             provider = prompt_provider()
@@ -157,20 +162,20 @@ def run_init(
             model = prompt_model()
         if sources is None:
             sources = prompt_sources()
-        if provider == "ollama" and _is_interactive():
+        if provider == "ollama" and interactive:
             ollama_base_url, ollama_timeout = prompt_ollama()
     except KeyboardInterrupt:
         print("\nAborted.")
         raise SystemExit(130)
 
     # Scaffold directory structure
-    _ensure_dir(chronicles_dir)
+    ensure_dir(chronicles_dir)
 
     # Generate config
     config_path = chronicles_dir / "config.yaml"
     if config_path.exists():
         print(f"{config_path} already exists, skipping config generation.")
-        print(f"Verified chronicles directory structure in ./{chronicles_dir}")
+        print(f"Verified chronicles directory structure in {chronicles_dir}")
         return
 
     config_text = generate_config(
@@ -182,7 +187,7 @@ def run_init(
     )
     config_path.write_text(config_text)
 
-    print(f"Initialized chronicles in ./{chronicles_dir}\n")
+    print(f"Initialized chronicles in {chronicles_dir}\n")
     print(f"Config written to {config_path}\n")
     print("To enable automatic ingestion, install the chronicles plugin:")
     print("  Claude Code:")
@@ -194,7 +199,7 @@ def run_init(
     print("Run 'chronicles ingest' to process your first sessions.")
 
 
-def _ensure_dir(chronicles_dir: Path) -> None:
+def ensure_dir(chronicles_dir: Path) -> None:
     """Bootstrap chronicles directory structure if it doesn't exist."""
     from datetime import date
 
