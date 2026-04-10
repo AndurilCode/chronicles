@@ -124,7 +124,7 @@ def _parse_and_clean_all(paths: list[Path], source_override: str | None):
 
 def _load_wiki_context(chronicles_dir: Path) -> list[dict]:
     """Load existing wiki article titles, tags, and types for extractor context."""
-    import yaml
+    from chronicles.frontmatter import parse_frontmatter
 
     articles_dir = chronicles_dir / "wiki" / "articles"
     if not articles_dir.exists():
@@ -133,13 +133,8 @@ def _load_wiki_context(chronicles_dir: Path) -> list[dict]:
     context = []
     for path in sorted(articles_dir.glob("*.md")):
         text = path.read_text()
-        import re
-        match = re.match(r"^---\n(.+?)\n---", text, re.DOTALL)
-        if not match:
-            continue
-        try:
-            fm = yaml.safe_load(match.group(1))
-        except yaml.YAMLError:
+        fm = parse_frontmatter(text)
+        if fm is None:
             continue
 
         # Extract title from first heading

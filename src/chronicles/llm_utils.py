@@ -1,4 +1,4 @@
-"""Unified LLM provider abstraction.
+"""Unified LLM provider abstraction and shared LLM response utilities.
 
 All provider-specific logic lives here. Consumers call ``call_llm()``
 and never need to know which backend is in use.
@@ -10,6 +10,8 @@ import logging
 import subprocess
 import urllib.request
 import urllib.error
+
+from json_repair import repair_json
 
 from chronicles.config import LLMConfig, OllamaConfig
 
@@ -88,3 +90,47 @@ def _call_ollama(model: str, prompt: str, ollama_config: OllamaConfig | None = N
         raise RuntimeError(
             f"Ollama API call timed out after {cfg.timeout}s"
         )
+
+
+def parse_llm_json(raw: str) -> dict:
+    """Strip markdown fences, locate JSON object, parse with repair fallback.
+
+    Raises RuntimeError on empty input or unparseable response.
+    """
+    text = raw.strip()
+    if not text:
+        raise RuntimeError("LLM returned empty response")
+    # Strip markdown fences if present
+    if text.startswith("```"):
+        text = "\n".join(text.split("\n")[1:])
+    if text.endswith("```"):
+        text = "\n".join(text.split("\n")[:-1])
+    text = text.strip()
+    # Find JSON object in response
+    start = text.find("{")
+    end = text.rfind("}") + 1
+    if start == -1 or end == 0:
+        raise RuntimeError(f"No JSON object found in LLM response: {text[:200]}")
+    text = text[start:end]
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        try:
+            return json.loads(repair_json(text))
+        except (json.JSONDecodeError, ValueError) as e:
+            raise RuntimeError(
+                f"Failed to parse LLM JSON: {e}\nResponse: {text[:500]}"
+            ) from e
+
+
+def normalize_enum(value: str, valid: set[str], default: str) -> str:
+    """Normalize an enum value: lowercase, strip, fuzzy match."""
+    if not isinstance(value, str):
+        return default
+    v = value.strip().lower()
+    if v in valid:
+        return v
+    for candidate in valid:
+        if v.startswith(candidate) or candidate.startswith(v):
+            return candidate
+    return default

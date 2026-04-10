@@ -5,6 +5,7 @@ import logging
 import re
 from pathlib import Path
 
+from chronicles.frontmatter import parse_frontmatter, normalize_source
 from chronicles.models import ExtractionResult
 from chronicles.templates import TemplateRenderer
 
@@ -137,11 +138,11 @@ def write_wiki_pages(
             # Preserve sources from existing article if overwriting
             if out_path.exists():
                 existing_text = out_path.read_text()
-                existing_fm = _parse_frontmatter(existing_text)
+                existing_fm = parse_frontmatter(existing_text)
                 if existing_fm:
                     existing_sources = existing_fm.get("sources", [])
                     for s in existing_sources:
-                        s_norm = _normalize_source_ref(s)
+                        s_norm = normalize_source(s)
                         if s_norm and s_norm not in context["sources"]:
                             context["sources"].append(s_norm)
             content = renderer.render(template_name, context)
@@ -187,30 +188,6 @@ def write_wiki_pages(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-def _parse_frontmatter(text: str) -> dict | None:
-    """Extract and parse YAML frontmatter from markdown text."""
-    import yaml
-    match = re.match(r"^---\n(.*?)\n---\n", text, re.DOTALL)
-    if not match:
-        return None
-    try:
-        return yaml.safe_load(match.group(1)) or {}
-    except yaml.YAMLError:
-        return None
-
-
-def _normalize_source_ref(source) -> str:
-    """Normalize a source reference to a plain string."""
-    if isinstance(source, list):
-        while isinstance(source, list) and source:
-            source = source[0]
-    s = str(source).strip('"')
-    match = re.search(r"\[\[([^\]]+)\]\]", s)
-    if match:
-        return match.group(1)
-    return s
-
 
 def _update_frontmatter(text: str, date: str) -> str:
     """Increment record_count and set last_updated in YAML frontmatter."""

@@ -222,7 +222,3 @@ def ensure_dir(chronicles_dir: Path) -> None:
         )
 
 
-def _is_interactive() -> bool:
-    """Check if stdin is a terminal (interactive)."""
-    import sys
-    return sys.stdin.isatty()

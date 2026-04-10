@@ -3,17 +3,12 @@ from __future__ import annotations
 
 import logging
 
+from chronicles.cleaner import SKIP_TOOLS
 from chronicles.models import (
     Message, Transcript, CleanedTranscript, TranscriptMetadata,
 )
 
 log = logging.getLogger("chronicles")
-
-SKIP_TOOLS = frozenset({
-    "TaskCreate", "TaskUpdate", "TaskGet", "TaskList",
-    "TaskStop", "TaskOutput", "ToolSearch",
-    "Skill", "Agent", "SendMessage",
-})
 
 STRIP_CONTENT_TOOLS = frozenset({"Read", "Glob"})
 STRIP_MATCH_TOOLS = frozenset({"Grep"})

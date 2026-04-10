@@ -1,12 +1,8 @@
 """Signals extractor — LLM-powered detection of agentic operational patterns."""
 from __future__ import annotations
 
-import json
-
-from json_repair import repair_json
-
 from chronicles.config import LLMConfig
-from chronicles.llm_utils import call_llm
+from chronicles.llm_utils import call_llm, parse_llm_json, normalize_enum
 from chronicles.models import CleanedTranscript, Signal, SignalsResult
 
 _AGENT_PROMPT = """\
@@ -191,33 +187,7 @@ class SignalsExtractor:
         return ""
 
     def _parse_response(self, raw: str) -> SignalsResult:
-        text = raw.strip()
-        if not text:
-            raise RuntimeError("LLM returned empty response")
-
-        # Strip markdown fences if present
-        if text.startswith("```"):
-            text = "\n".join(text.split("\n")[1:])
-        if text.endswith("```"):
-            text = "\n".join(text.split("\n")[:-1])
-        text = text.strip()
-
-        # Find JSON object
-        start = text.find("{")
-        end = text.rfind("}") + 1
-        if start == -1 or end == 0:
-            raise RuntimeError(f"No JSON object found in LLM response: {text[:200]}")
-        text = text[start:end]
-
-        try:
-            data = json.loads(text)
-        except json.JSONDecodeError:
-            try:
-                data = json.loads(repair_json(text))
-            except (json.JSONDecodeError, ValueError) as e:
-                raise RuntimeError(
-                    f"Failed to parse LLM JSON: {e}\nResponse: {text[:500]}"
-                ) from e
+        data = parse_llm_json(raw)
 
         signals_raw = data.get("signals", [])
         if not isinstance(signals_raw, list):
@@ -231,8 +201,8 @@ class SignalsExtractor:
         for s in signals_raw:
             if not isinstance(s, dict):
                 continue
-            sig_type = self._normalize_enum(s.get("type", ""), _VALID_TYPE, "mistake")
-            severity = self._normalize_enum(s.get("severity", ""), _VALID_SEVERITY, "low")
+            sig_type = normalize_enum(s.get("type", ""), _VALID_TYPE, "mistake")
+            severity = normalize_enum(s.get("severity", ""), _VALID_SEVERITY, "low")
             context = s.get("context", [])
             if not isinstance(context, list):
                 context = []
@@ -247,19 +217,6 @@ class SignalsExtractor:
         demotions = [str(d) for d in demotions_raw if d]
 
         return SignalsResult(signals=signals, demotions=demotions)
-
-    @staticmethod
-    def _normalize_enum(value: str, valid: set[str], default: str) -> str:
-        """Normalize an enum value: lowercase, strip, fuzzy match."""
-        if not isinstance(value, str):
-            return default
-        v = value.strip().lower()
-        if v in valid:
-            return v
-        for candidate in valid:
-            if v.startswith(candidate) or candidate.startswith(v):
-                return candidate
-        return default
 
     def _call_llm(self, prompt: str) -> str:
         return call_llm(prompt, self.config)

@@ -13,6 +13,7 @@ import yaml
 
 from chronicles.archiver import rotate_records
 from chronicles.config import load_config
+from chronicles.frontmatter import parse_frontmatter, normalize_source
 from chronicles.similarity import get_similarity_engine
 from chronicles.similarity.base import BaseSimilarityEngine
 from chronicles.templates import TemplateRenderer
@@ -47,17 +48,6 @@ def _today() -> str:
     return date.today().isoformat()
 
 
-def _parse_frontmatter(text: str) -> dict[str, Any] | None:
-    """Extract and parse YAML frontmatter from markdown text. Returns None if absent."""
-    match = re.match(r"^---\n(.*?)\n---\n", text, re.DOTALL)
-    if not match:
-        return None
-    try:
-        return yaml.safe_load(match.group(1)) or {}
-    except yaml.YAMLError:
-        return None
-
-
 def _load_articles(articles_dir: Path) -> tuple[list[dict], list[str]]:
     """Load wiki articles and validate frontmatter.
 
@@ -73,7 +63,7 @@ def _load_articles(articles_dir: Path) -> tuple[list[dict], list[str]]:
 
     for path in sorted(articles_dir.glob("*.md")):
         text = path.read_text()
-        fm = _parse_frontmatter(text)
+        fm = parse_frontmatter(text)
         if fm is None:
             errors.append(f"{path.name}: missing or invalid frontmatter")
             continue
@@ -88,7 +78,7 @@ def _load_articles(articles_dir: Path) -> tuple[list[dict], list[str]]:
 
         # Normalize sources — YAML parses unquoted [[x]] as nested lists
         if isinstance(sources, list):
-            fm["sources"] = [_normalize_source(s) for s in sources]
+            fm["sources"] = [normalize_source(s) for s in sources]
 
         articles.append({"path": path, "frontmatter": fm, "text": text})
 
@@ -349,29 +339,11 @@ def _fallback_dedup(articles: list[dict], report: LintReport) -> list[dict]:
     return [a for i, a in enumerate(articles) if i not in merged_indices]
 
 
-def _normalize_source(source) -> str:
-    """Normalize a source entry to a string.
-
-    Sources can be strings like '"[[record]]"' or nested lists like [['record']]
-    when YAML parses unquoted [[...]] as a list. Normalize to 'record' stem.
-    """
-    if isinstance(source, list):
-        # [[record]] parsed as nested list — flatten
-        while isinstance(source, list) and source:
-            source = source[0]
-    s = str(source).strip('"')
-    # Strip wikilink brackets if present
-    match = re.search(r"\[\[([^\]]+)\]\]", s)
-    if match:
-        return match.group(1)
-    return s
-
-
 def _merge_article(target: dict, source: dict) -> None:
     target_fm = target["frontmatter"]
     source_fm = source["frontmatter"]
-    existing_sources = [_normalize_source(s) for s in (target_fm.get("sources", []) or [])]
-    new_sources = [_normalize_source(s) for s in (source_fm.get("sources", []) or [])]
+    existing_sources = [normalize_source(s) for s in (target_fm.get("sources", []) or [])]
+    new_sources = [normalize_source(s) for s in (source_fm.get("sources", []) or [])]
     all_sources = list(dict.fromkeys(existing_sources + new_sources))
     existing_tags = set(target_fm.get("tags", []))
     new_tags = set(source_fm.get("tags", []))
@@ -419,7 +391,7 @@ VALID_RELATIONSHIP_TYPES = frozenset({
 
 def _parse_relationships(text: str) -> list[dict]:
     """Extract relationships list from article frontmatter text."""
-    fm = _parse_frontmatter(text)
+    fm = parse_frontmatter(text)
     if fm is None:
         return []
     return fm.get("relationships", []) or []
@@ -486,7 +458,7 @@ def _infer_relationships(
 
         # Add contradicts from contested status — re-parse from text
         # because _detect_contested may have updated the text without updating the dict
-        current_fm = _parse_frontmatter(article["text"]) or {}
+        current_fm = parse_frontmatter(article["text"]) or {}
         if current_fm.get("confidence") == "contested":
             contested_by = current_fm.get("contested_by", "")
             match = re.search(r"\[\[([^\]]+)\]\]", str(contested_by))

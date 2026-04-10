@@ -6,10 +6,8 @@ from __future__ import annotations
 
 import json
 
-from json_repair import repair_json
-
 from chronicles.config import LLMConfig
-from chronicles.llm_utils import call_llm
+from chronicles.llm_utils import call_llm, parse_llm_json, normalize_enum
 from chronicles.models import CleanedTranscript, ExtractionResult
 
 _SYSTEM_PROMPT = """\
@@ -193,28 +191,7 @@ class Extractor:
     _VALID_DISCOVERED_TYPE = {"convention", "missing-context", "workaround", "pattern", "trap"}
 
     def _parse_response(self, raw: str) -> ExtractionResult:
-        text = raw.strip()
-        if not text:
-            raise RuntimeError("LLM returned empty response")
-        # Strip markdown fences if present
-        if text.startswith("```"):
-            text = "\n".join(text.split("\n")[1:])
-        if text.endswith("```"):
-            text = "\n".join(text.split("\n")[:-1])
-        text = text.strip()
-        # Find JSON object in response (LLM may prepend/append text)
-        start = text.find("{")
-        end = text.rfind("}") + 1
-        if start == -1 or end == 0:
-            raise RuntimeError(f"No JSON object found in LLM response: {text[:200]}")
-        text = text[start:end]
-        try:
-            data = json.loads(text)
-        except json.JSONDecodeError:
-            try:
-                data = json.loads(repair_json(text))
-            except (json.JSONDecodeError, ValueError) as e:
-                raise RuntimeError(f"Failed to parse LLM JSON: {e}\nResponse: {text[:500]}") from e
+        data = parse_llm_json(raw)
 
         # Validate required keys
         _REQUIRED_KEYS = [
@@ -229,7 +206,7 @@ class Extractor:
             )
 
         # Normalize and validate
-        data["status"] = self._normalize_enum(data["status"], self._VALID_STATUS, "complete")
+        data["status"] = normalize_enum(data["status"], self._VALID_STATUS, "complete")
         data["tags"] = self._ensure_list(data["tags"])
         data["files_changed"] = self._ensure_list(data["files_changed"])
         data["decisions"] = self._ensure_list(data["decisions"])
@@ -240,7 +217,7 @@ class Extractor:
         # Normalize discovered types
         for d in data["discovered"]:
             if isinstance(d, dict) and "type" in d:
-                d["type"] = self._normalize_enum(d["type"], self._VALID_DISCOVERED_TYPE, "pattern")
+                d["type"] = normalize_enum(d["type"], self._VALID_DISCOVERED_TYPE, "pattern")
 
         # Normalize wiki_instructions data fields
         for instr in data["wiki_instructions"]:
@@ -249,11 +226,11 @@ class Extractor:
             instr_data = instr.get("data", {})
             if isinstance(instr_data, dict):
                 if "type" in instr_data:
-                    instr_data["type"] = self._normalize_enum(
+                    instr_data["type"] = normalize_enum(
                         instr_data["type"], self._VALID_ARTICLE_TYPE, "pattern"
                     )
                 if "confidence" in instr_data:
-                    instr_data["confidence"] = self._normalize_enum(
+                    instr_data["confidence"] = normalize_enum(
                         instr_data["confidence"], self._VALID_CONFIDENCE, "low"
                     )
                 instr_data["tags"] = self._ensure_list(instr_data.get("tags", []))
@@ -284,20 +261,6 @@ class Extractor:
             continuity=data["continuity"],
             wiki_instructions=data["wiki_instructions"],
         )
-
-    @staticmethod
-    def _normalize_enum(value: str, valid: set[str], default: str) -> str:
-        """Normalize an enum value: lowercase, strip, fuzzy match."""
-        if not isinstance(value, str):
-            return default
-        v = value.strip().lower()
-        if v in valid:
-            return v
-        # Fuzzy: check if any valid value starts with the input or vice versa
-        for candidate in valid:
-            if v.startswith(candidate) or candidate.startswith(v):
-                return candidate
-        return default
 
     @staticmethod
     def _ensure_list(value) -> list:

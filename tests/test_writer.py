@@ -38,7 +38,7 @@ def test_write_record(chronicles_dir):
     result = _make_result()
     path = write_record(chronicles_dir, result, "claude-code", "2026-04-09", renderer)
     assert path.exists()
-    assert path.name == "2026-04-09_feat-oauth.md"
+    assert path.name == "2026-04-09_unknown_feat-oauth.md"
     content = path.read_text()
     assert "feat/oauth" in content
     assert "Add OAuth" in content
