@@ -85,3 +85,51 @@ def generate_config(
     lines.append("")
 
     return "\n".join(lines)
+
+
+def prompt_provider() -> str:
+    """Prompt user to select an LLM provider. Returns provider string."""
+    print("Select LLM provider:")
+    for i, p in enumerate(VALID_PROVIDERS, 1):
+        print(f"  [{i}] {p}")
+    while True:
+        choice = input("Choice [1]: ").strip()
+        if choice == "":
+            return VALID_PROVIDERS[0]
+        if choice.isdigit() and 1 <= int(choice) <= len(VALID_PROVIDERS):
+            return VALID_PROVIDERS[int(choice) - 1]
+        print(f"Invalid choice. Enter 1-{len(VALID_PROVIDERS)}.")
+
+
+def prompt_model() -> str:
+    """Prompt user for a model name. Required — loops until non-empty."""
+    value = input("Model: ").strip()
+    while not value:
+        value = input("Model is required. Enter a model name: ").strip()
+    return value
+
+
+def prompt_sources() -> list[str]:
+    """Prompt user to select transcript sources. Returns list of source strings."""
+    print("Select transcript sources (comma-separated):")
+    for i, s in enumerate(VALID_SOURCES, 1):
+        print(f"  [{i}] {s}")
+    default_nums = ",".join(str(i) for i in range(1, len(VALID_SOURCES) + 1))
+    while True:
+        choice = input(f"Sources [{default_nums}]: ").strip()
+        if choice == "":
+            return list(VALID_SOURCES)
+        parts = [p.strip() for p in choice.split(",")]
+        if all(p.isdigit() and 1 <= int(p) <= len(VALID_SOURCES) for p in parts):
+            return [VALID_SOURCES[int(p) - 1] for p in parts]
+        print(f"Invalid choice. Enter numbers 1-{len(VALID_SOURCES)} separated by commas.")
+
+
+def prompt_ollama() -> tuple[str, int]:
+    """Prompt for Ollama-specific settings. Returns (base_url, timeout)."""
+    base_url = input("Ollama base URL [http://localhost:11434]: ").strip()
+    if not base_url:
+        base_url = "http://localhost:11434"
+    timeout_str = input("Ollama timeout in seconds [300]: ").strip()
+    timeout = int(timeout_str) if timeout_str else 300
+    return base_url, timeout
