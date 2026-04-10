@@ -211,7 +211,7 @@ def _calibrate_confidence(
 def _get_similarity_engine(config) -> BaseSimilarityEngine | None:
     """Try to instantiate the configured similarity engine; return None on failure."""
     try:
-        return get_similarity_engine(config.similarity, llm_config=config.llm)
+        return get_similarity_engine(config.similarity, llm_config=config.llm.for_step("similarity"))
     except (ValueError, Exception) as e:
         log.warning("Similarity engine unavailable, using fallback: %s", e)
         return None
@@ -228,7 +228,7 @@ def _get_confirm_engine(config) -> BaseSimilarityEngine | None:
             engine=confirm,
             threshold=config.similarity.confirm_threshold,
         )
-        return get_similarity_engine(confirm_config, llm_config=config.llm)
+        return get_similarity_engine(confirm_config, llm_config=config.llm.for_step("similarity"))
     except (ValueError, Exception) as e:
         log.warning("Confirm engine unavailable: %s", e)
         return None

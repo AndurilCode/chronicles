@@ -1,5 +1,5 @@
 """Tests for config loading."""
-from chronicles.config import load_config
+from chronicles.config import load_config, LLMConfig, LLMStepConfig
 
 
 def test_load_config_from_file(chronicles_dir):
@@ -87,3 +87,73 @@ def test_signals_config_custom(tmp_path):
     config = load_config(tmp_path)
     assert config.signals.max_active == 30
     assert config.signals.demoted_retention_days == 60
+
+
+def test_for_step_no_override():
+    """for_step returns self when no override is set."""
+    llm = LLMConfig(provider="claude-code", model="haiku")
+    result = llm.for_step("extract")
+    assert result is llm
+
+
+def test_for_step_with_override():
+    """for_step merges step override with global defaults."""
+    llm = LLMConfig(
+        provider="claude-code",
+        model="haiku",
+        max_concurrent=5,
+        extract=LLMStepConfig(model="sonnet"),
+    )
+    result = llm.for_step("extract")
+    assert result.provider == "claude-code"  # inherited
+    assert result.model == "sonnet"  # overridden
+    assert result.max_concurrent == 5  # inherited
+
+
+def test_for_step_override_provider_only():
+    """for_step can override just the provider."""
+    llm = LLMConfig(
+        provider="claude-code",
+        model="haiku",
+        signals=LLMStepConfig(provider="copilot-cli"),
+    )
+    result = llm.for_step("signals")
+    assert result.provider == "copilot-cli"
+    assert result.model == "haiku"  # inherited
+
+
+def test_for_step_unknown_step():
+    """for_step with unknown step name returns self."""
+    llm = LLMConfig(provider="claude-code", model="haiku")
+    result = llm.for_step("nonexistent")
+    assert result is llm
+
+
+def test_load_config_per_step_overrides(tmp_path):
+    """Per-step LLM overrides are parsed from config.yaml."""
+    (tmp_path / "config.yaml").write_text(
+        "llm:\n"
+        "  provider: claude-code\n"
+        "  model: haiku\n"
+        "  extract:\n"
+        "    model: sonnet\n"
+        "  signals:\n"
+        "    provider: copilot-cli\n"
+        "    model: gpt-5\n"
+    )
+    config = load_config(tmp_path)
+    assert config.llm.provider == "claude-code"
+    assert config.llm.model == "haiku"
+
+    extract = config.llm.for_step("extract")
+    assert extract.provider == "claude-code"  # inherited
+    assert extract.model == "sonnet"
+
+    signals = config.llm.for_step("signals")
+    assert signals.provider == "copilot-cli"
+    assert signals.model == "gpt-5"
+
+    # Steps without overrides return global config
+    enrich = config.llm.for_step("enrich")
+    assert enrich.provider == "claude-code"
+    assert enrich.model == "haiku"

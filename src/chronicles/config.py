@@ -8,10 +8,38 @@ import yaml
 
 
 @dataclass
+class LLMStepConfig:
+    """Per-step LLM override — empty strings mean 'inherit from global'."""
+    provider: str = ""
+    model: str = ""
+
+
+@dataclass
 class LLMConfig:
     provider: str = "copilot-cli"
     model: str = "gpt-5-mini"
     max_concurrent: int = 3
+
+    # Per-step overrides — each is optional and inherits from the global defaults.
+    extract: LLMStepConfig | None = None
+    enrich: LLMStepConfig | None = None
+    signals: LLMStepConfig | None = None
+    similarity: LLMStepConfig | None = None
+
+    def for_step(self, step: str) -> LLMConfig:
+        """Return an LLMConfig resolved for the given step.
+
+        Step-level provider/model override the global values;
+        max_concurrent is always inherited from the global config.
+        """
+        override: LLMStepConfig | None = getattr(self, step, None)
+        if override is None:
+            return self
+        return LLMConfig(
+            provider=override.provider or self.provider,
+            model=override.model or self.model,
+            max_concurrent=self.max_concurrent,
+        )
 
 
 @dataclass
@@ -80,10 +108,27 @@ def load_config(chronicles_dir: Path) -> ChroniclesConfig:
         raw = yaml.safe_load(config_path.read_text()) or {}
 
     llm_raw = raw.get("llm", {})
+
+    # Parse per-step overrides
+    step_overrides: dict[str, LLMStepConfig | None] = {}
+    for step_name in ("extract", "enrich", "signals", "similarity"):
+        step_raw = llm_raw.get(step_name)
+        if isinstance(step_raw, dict):
+            step_overrides[step_name] = LLMStepConfig(
+                provider=step_raw.get("provider", ""),
+                model=step_raw.get("model", ""),
+            )
+        else:
+            step_overrides[step_name] = None
+
     llm = LLMConfig(
         provider=llm_raw.get("provider", "copilot-cli"),
         model=llm_raw.get("model", "gpt-5-mini"),
         max_concurrent=llm_raw.get("max_concurrent", 3),
+        extract=step_overrides["extract"],
+        enrich=step_overrides["enrich"],
+        signals=step_overrides["signals"],
+        similarity=step_overrides["similarity"],
     )
 
     sources = raw.get("sources", ["claude-code", "copilot-cli", "copilot-vscode"])

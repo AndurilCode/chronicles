@@ -176,7 +176,7 @@ def _run_ingest(args: argparse.Namespace) -> None:
     _ensure_chronicles_dir(chronicles_dir)
     config = load_config(chronicles_dir)
     renderer = TemplateRenderer()
-    extractor = get_extractor(config.llm)
+    extractor = get_extractor(config.llm.for_step("extract"))
 
     paths: list[Path] = list(args.paths) if args.paths else []
 
@@ -204,7 +204,8 @@ def _run_ingest(args: argparse.Namespace) -> None:
     if wiki_context:
         log.info("Loaded %d existing wiki article(s) for context", len(wiki_context))
 
-    log.info("Extracting via %s (model: %s)...", config.llm.provider, config.llm.model)
+    extract_llm = config.llm.for_step("extract")
+    log.info("Extracting via %s (model: %s)...", extract_llm.provider, extract_llm.model)
     with ThreadPoolExecutor(max_workers=config.llm.max_concurrent) as pool:
         extract_fn = functools.partial(extractor.extract, wiki_context=wiki_context)
         results = list(pool.map(extract_fn, cleaned_transcripts))
@@ -311,7 +312,7 @@ def _run_signals(args: argparse.Namespace) -> None:
     signals_path = chronicles_dir / "SIGNALS.md"
     existing_signals = load_active_signals(signals_path)
 
-    extractor = SignalsExtractor(config.llm)
+    extractor = SignalsExtractor(config.llm.for_step("signals"))
 
     for path in paths:
         source_override = args.source
@@ -326,7 +327,8 @@ def _run_signals(args: argparse.Namespace) -> None:
         total_msgs = sum(len(c) for c in cleaned.chunks)
         log.info("Cleaned → %d messages in %d chunk(s)", total_msgs, len(cleaned.chunks))
 
-        log.info("Extracting signals via %s...", config.llm.provider)
+        signals_llm = config.llm.for_step("signals")
+        log.info("Extracting signals via %s (model: %s)...", signals_llm.provider, signals_llm.model)
         result = extractor.extract(cleaned, existing_signals=existing_signals)
 
         log.info("Found %d signal(s), %d demotion(s)",

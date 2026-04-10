@@ -29,12 +29,14 @@ Return ONLY the summary text — no headings, no markdown, no quotes. Just 2-3 p
 
 def enrich(chronicles_dir: Path, config: ChroniclesConfig) -> int:
     """Run LLM-powered enrichment on the wiki. Returns count of enriched items."""
+    # Resolve per-step LLM config for the enrich step
+    enrich_llm = config.llm.for_step("enrich")
     enriched = 0
-    enriched += _enrich_categories(chronicles_dir, config)
+    enriched += _enrich_categories(chronicles_dir, config, enrich_llm)
     return enriched
 
 
-def _enrich_categories(chronicles_dir: Path, config: ChroniclesConfig) -> int:
+def _enrich_categories(chronicles_dir: Path, config: ChroniclesConfig, enrich_llm=None) -> int:
     """Generate summaries for category pages using the LLM, in parallel."""
     categories_dir = chronicles_dir / "wiki" / "categories"
     if not categories_dir.exists():
@@ -89,10 +91,11 @@ def _enrich_categories(chronicles_dir: Path, config: ChroniclesConfig) -> int:
         return 0
 
     # Run LLM calls in parallel
-    max_workers = config.llm.max_concurrent
+    llm_cfg = enrich_llm or config.llm
+    max_workers = llm_cfg.max_concurrent
 
     def process_job(job: dict) -> bool:
-        summary = _call_llm(job["prompt"], config)
+        summary = _call_llm(job["prompt"], llm_cfg)
         if not summary:
             return False
 
@@ -152,10 +155,10 @@ def _collect_article_summaries(category_content: str, articles_dir: Path) -> lis
     return summaries
 
 
-def _call_llm(prompt: str, config: ChroniclesConfig) -> str:
+def _call_llm(prompt: str, llm_config) -> str:
     """Call the configured LLM provider."""
-    provider = config.llm.provider
-    model = config.llm.model
+    provider = llm_config.provider
+    model = llm_config.model
 
     if provider == "copilot-cli":
         cmd = ["copilot", "-p", prompt, "--model", model]
