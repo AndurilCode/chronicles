@@ -12,7 +12,7 @@ from pathlib import Path
 from chronicles.config import load_config
 from chronicles.cleaner import clean_transcript
 from chronicles.enricher import enrich
-from chronicles.extractors import get_extractor
+from chronicles.extractor import Extractor
 from chronicles.linter import lint
 from chronicles.signals_cleaner import clean_transcript_for_signals
 from chronicles.signals_extractor import SignalsExtractor
@@ -176,7 +176,7 @@ def _run_ingest(args: argparse.Namespace) -> None:
     _ensure_chronicles_dir(chronicles_dir)
     config = load_config(chronicles_dir)
     renderer = TemplateRenderer()
-    extractor = get_extractor(config.llm.for_step("extract"))
+    extractor = Extractor(config.llm.for_step("extract"))
 
     paths: list[Path] = list(args.paths) if args.paths else []
 

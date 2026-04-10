@@ -44,7 +44,7 @@ def test_full_ingest_pipeline(chronicles_dir, tmp_path):
         ],
     })
 
-    with patch("chronicles.extractors.copilot_cli.subprocess.run") as mock_run, \
+    with patch("chronicles.llm_utils._call_cli") as mock_run, \
          patch("chronicles.cli.ProcessPoolExecutor") as mock_pool_cls:
         # Make ProcessPoolExecutor behave like a simple sequential executor
         mock_pool = MagicMock()
@@ -53,7 +53,7 @@ def test_full_ingest_pipeline(chronicles_dir, tmp_path):
         mock_pool.map = lambda fn, iterable: list(map(fn, iterable))
         mock_pool_cls.return_value = mock_pool
 
-        mock_run.return_value = MagicMock(returncode=0, stdout=mock_response)
+        mock_run.return_value = mock_response
         main([
             "ingest", str(transcript_path),
             "--chronicles-dir", str(chronicles_dir),
@@ -138,11 +138,9 @@ def test_ingest_with_relationships(chronicles_dir):
         }],
     })
 
-    with patch("chronicles.extractors.copilot_cli.subprocess.run") as mock_run, \
+    with patch("chronicles.llm_utils._call_cli") as mock_run, \
          patch("chronicles.linter._get_similarity_engine", return_value=None):
-        mock_run.return_value = MagicMock(
-            returncode=0, stdout=extractor_response, stderr=""
-        )
+        mock_run.return_value = extractor_response
 
         args = MagicMock()
         args.paths = [fixture]

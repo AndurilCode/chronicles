@@ -3,11 +3,11 @@ from __future__ import annotations
 
 import logging
 import re
-import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from chronicles.config import ChroniclesConfig
+from chronicles.llm_utils import call_llm
 
 log = logging.getLogger("chronicles")
 
@@ -29,14 +29,13 @@ Return ONLY the summary text — no headings, no markdown, no quotes. Just 2-3 p
 
 def enrich(chronicles_dir: Path, config: ChroniclesConfig) -> int:
     """Run LLM-powered enrichment on the wiki. Returns count of enriched items."""
-    # Resolve per-step LLM config for the enrich step
     enrich_llm = config.llm.for_step("enrich")
     enriched = 0
-    enriched += _enrich_categories(chronicles_dir, config, enrich_llm)
+    enriched += _enrich_categories(chronicles_dir, enrich_llm)
     return enriched
 
 
-def _enrich_categories(chronicles_dir: Path, config: ChroniclesConfig, enrich_llm=None) -> int:
+def _enrich_categories(chronicles_dir: Path, llm_config) -> int:
     """Generate summaries for category pages using the LLM, in parallel."""
     categories_dir = chronicles_dir / "wiki" / "categories"
     if not categories_dir.exists():
@@ -91,11 +90,15 @@ def _enrich_categories(chronicles_dir: Path, config: ChroniclesConfig, enrich_ll
         return 0
 
     # Run LLM calls in parallel
-    llm_cfg = enrich_llm or config.llm
-    max_workers = llm_cfg.max_concurrent
+    max_workers = llm_config.max_concurrent
 
     def process_job(job: dict) -> bool:
-        summary = _call_llm(job["prompt"], llm_cfg)
+        try:
+            summary = call_llm(job["prompt"], llm_config).strip()
+        except RuntimeError as e:
+            log.warning("LLM call failed: %s", e)
+            return False
+
         if not summary:
             return False
 
@@ -106,7 +109,7 @@ def _enrich_categories(chronicles_dir: Path, config: ChroniclesConfig, enrich_ll
             new_lines.append(line)
             if line.startswith("# ") and not inserted:
                 new_lines.append("")
-                new_lines.append(summary.strip())
+                new_lines.append(summary)
                 inserted = True
 
         job["cat_path"].write_text("\n".join(new_lines))
@@ -153,27 +156,3 @@ def _collect_article_summaries(category_content: str, articles_dir: Path) -> lis
         summaries.append(f"- {art_title}: {art_summary}")
 
     return summaries
-
-
-def _call_llm(prompt: str, llm_config) -> str:
-    """Call the configured LLM provider."""
-    provider = llm_config.provider
-    model = llm_config.model
-
-    if provider == "copilot-cli":
-        cmd = ["copilot", "-p", prompt, "--model", model]
-    elif provider == "claude-code":
-        cmd = ["claude", "--print", "--model", model, prompt]
-    else:
-        log.warning("Unknown LLM provider for enrich: %s", provider)
-        return ""
-
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=120)
-        if result.returncode != 0:
-            log.warning("LLM call failed: %s", result.stderr[:200])
-            return ""
-        return result.stdout.strip()
-    except subprocess.TimeoutExpired:
-        log.warning("LLM call timed out")
-        return ""

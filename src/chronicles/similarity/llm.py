@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import logging
 import re
-import subprocess
 from concurrent.futures import ThreadPoolExecutor
 
 from chronicles.config import LLMConfig, SimilarityConfig
+from chronicles.llm_utils import call_llm
 from chronicles.similarity.base import BaseSimilarityEngine
 
 log = logging.getLogger("chronicles")
@@ -21,7 +21,7 @@ _SIMILARITY_PROMPT = (
 
 
 class LLMSimilarityEngine(BaseSimilarityEngine):
-    """Similarity scoring via configured LLM CLI backend."""
+    """Similarity scoring via configured LLM backend."""
 
     def __init__(self, config: SimilarityConfig, llm_config: LLMConfig) -> None:
         super().__init__(config)
@@ -52,27 +52,10 @@ class LLMSimilarityEngine(BaseSimilarityEngine):
         return results
 
     def _call_llm(self, prompt: str) -> str:
-        provider = self.llm_config.provider
-        model = self.llm_config.model
-
-        if provider == "copilot-cli":
-            cmd = ["copilot", "-p", prompt, "--model", model]
-        elif provider == "claude-code":
-            cmd = ["claude", "--print", "--model", model, prompt]
-        else:
-            log.warning("Unknown LLM provider for similarity: %s", provider)
-            return ""
-
         try:
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, check=False, timeout=60
-            )
-            if result.returncode != 0:
-                log.warning("Similarity LLM call failed: %s", result.stderr[:200])
-                return ""
-            return result.stdout.strip()
-        except subprocess.TimeoutExpired:
-            log.warning("Similarity LLM call timed out")
+            return call_llm(prompt, self.llm_config).strip()
+        except RuntimeError as e:
+            log.warning("Similarity LLM call failed: %s", e)
             return ""
 
     @staticmethod

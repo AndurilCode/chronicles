@@ -1,8 +1,8 @@
-"""Tests for Claude Code extractor."""
+"""Tests for extraction with the claude-code provider."""
 import json
 from unittest.mock import patch, MagicMock
 from chronicles.config import LLMConfig
-from chronicles.extractors.claude_code import ClaudeCodeExtractor
+from chronicles.extractor import Extractor
 from chronicles.models import Message, CleanedTranscript, TranscriptMetadata
 
 def _make_cleaned_transcript() -> CleanedTranscript:
@@ -18,25 +18,21 @@ def _make_cleaned_transcript() -> CleanedTranscript:
     ]
     return CleanedTranscript(metadata=meta, chunks=[messages])
 
-@patch("chronicles.extractors.claude_code.subprocess.run")
-def test_extract_calls_claude(mock_run):
-    mock_run.return_value = MagicMock(
-        returncode=0,
-        stdout=json.dumps({
-            "branch": "fix/bug", "status": "complete", "tags": [],
-            "duration": "5min", "files_changed": [],
-            "objective": "Fix", "outcome": "Fixed",
-            "decisions": [], "problems": [], "discovered": [],
-            "continuity": {"unfinished": [], "open_questions": [], "next": []},
-            "wiki_instructions": [],
-        }),
-    )
+@patch("chronicles.llm_utils._call_cli")
+def test_extract_calls_claude(mock_cli):
+    mock_cli.return_value = json.dumps({
+        "branch": "fix/bug", "status": "complete", "tags": [],
+        "duration": "5min", "files_changed": [],
+        "objective": "Fix", "outcome": "Fixed",
+        "decisions": [], "problems": [], "discovered": [],
+        "continuity": {"unfinished": [], "open_questions": [], "next": []},
+        "wiki_instructions": [],
+    })
     config = LLMConfig(provider="claude-code", model="claude-opus-4-6")
-    extractor = ClaudeCodeExtractor(config)
+    extractor = Extractor(config)
     result = extractor.extract(_make_cleaned_transcript())
     assert result.branch == "fix/bug"
-    mock_run.assert_called_once()
-    call_args = mock_run.call_args
-    cmd = call_args[0][0]
+    mock_cli.assert_called_once()
+    cmd = mock_cli.call_args[0][0]
     assert "claude" in cmd[0]
     assert "--print" in cmd

@@ -8,6 +8,16 @@ import yaml
 
 
 @dataclass
+class OllamaConfig:
+    """Ollama-specific settings."""
+    base_url: str = "http://localhost:11434"
+    timeout: int = 300
+    temperature: float = 0.0
+    num_ctx: int = 0       # 0 = use model default
+    num_predict: int = 0   # 0 = use model default
+
+
+@dataclass
 class LLMStepConfig:
     """Per-step LLM override — empty strings mean 'inherit from global'."""
     provider: str = ""
@@ -19,6 +29,7 @@ class LLMConfig:
     provider: str = "copilot-cli"
     model: str = "gpt-5-mini"
     max_concurrent: int = 3
+    ollama: OllamaConfig | None = None
 
     # Per-step overrides — each is optional and inherits from the global defaults.
     extract: LLMStepConfig | None = None
@@ -30,7 +41,7 @@ class LLMConfig:
         """Return an LLMConfig resolved for the given step.
 
         Step-level provider/model override the global values;
-        max_concurrent is always inherited from the global config.
+        max_concurrent and ollama settings are always inherited from the global config.
         """
         override: LLMStepConfig | None = getattr(self, step, None)
         if override is None:
@@ -39,6 +50,7 @@ class LLMConfig:
             provider=override.provider or self.provider,
             model=override.model or self.model,
             max_concurrent=self.max_concurrent,
+            ollama=self.ollama,
         )
 
 
@@ -121,10 +133,20 @@ def load_config(chronicles_dir: Path) -> ChroniclesConfig:
         else:
             step_overrides[step_name] = None
 
+    ollama_raw = raw.get("ollama", {})
+    ollama = OllamaConfig(
+        base_url=ollama_raw.get("base_url", "http://localhost:11434"),
+        timeout=ollama_raw.get("timeout", 300),
+        temperature=float(ollama_raw.get("temperature", 0.0)),
+        num_ctx=ollama_raw.get("num_ctx", 0),
+        num_predict=ollama_raw.get("num_predict", 0),
+    )
+
     llm = LLMConfig(
         provider=llm_raw.get("provider", "copilot-cli"),
         model=llm_raw.get("model", "gpt-5-mini"),
         max_concurrent=llm_raw.get("max_concurrent", 3),
+        ollama=ollama,
         extract=step_overrides["extract"],
         enrich=step_overrides["enrich"],
         signals=step_overrides["signals"],

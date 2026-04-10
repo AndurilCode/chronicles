@@ -1,10 +1,15 @@
-"""Copilot CLI extractor — delegates extraction to GitHub Copilot CLI."""
+"""LLM extractor — builds the extraction prompt and parses the response.
+
+Provider-agnostic: delegates the actual LLM call to ``call_llm()``.
+"""
 from __future__ import annotations
 
 import json
-import subprocess
 
-from chronicles.extractors.base import BaseExtractor
+from json_repair import repair_json
+
+from chronicles.config import LLMConfig
+from chronicles.llm_utils import call_llm
 from chronicles.models import CleanedTranscript, ExtractionResult
 
 _SYSTEM_PROMPT = """\
@@ -116,8 +121,11 @@ RULES:
 """
 
 
-class CopilotCLIExtractor(BaseExtractor):
-    """Uses the GitHub Copilot CLI (`copilot`) to extract transcript data."""
+class Extractor:
+    """Builds the extraction prompt, calls the LLM, and parses the JSON response."""
+
+    def __init__(self, config: LLMConfig) -> None:
+        self.config = config
 
     def _build_prompt(
         self,
@@ -203,10 +211,9 @@ class CopilotCLIExtractor(BaseExtractor):
         try:
             data = json.loads(text)
         except json.JSONDecodeError:
-            repaired = self._repair_json(text)
             try:
-                data = json.loads(repaired)
-            except json.JSONDecodeError as e:
+                data = json.loads(repair_json(text))
+            except (json.JSONDecodeError, ValueError) as e:
                 raise RuntimeError(f"Failed to parse LLM JSON: {e}\nResponse: {text[:500]}") from e
 
         # Validate required keys
@@ -279,14 +286,6 @@ class CopilotCLIExtractor(BaseExtractor):
         )
 
     @staticmethod
-    def _repair_json(text: str) -> str:
-        """Attempt basic JSON repairs for common LLM output issues."""
-        import re
-        # Remove trailing commas before ] or }
-        text = re.sub(r",\s*([}\]])", r"\1", text)
-        return text
-
-    @staticmethod
     def _normalize_enum(value: str, valid: set[str], default: str) -> str:
         """Normalize an enum value: lowercase, strip, fuzzy match."""
         if not isinstance(value, str):
@@ -317,15 +316,5 @@ class CopilotCLIExtractor(BaseExtractor):
         wiki_context: list[dict] | None = None,
     ) -> ExtractionResult:
         prompt = self._build_prompt(transcript, wiki_context)
-        cmd = ["copilot", "-p", prompt, "--model", self.config.model]
-        import logging
-        _log = logging.getLogger("chronicles")
-        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"copilot CLI failed (exit {result.returncode}): {result.stderr}"
-            )
-        if result.stderr:
-            _log.debug("copilot stderr: %s", result.stderr[:500])
-        _log.debug("copilot stdout length: %d chars", len(result.stdout))
-        return self._parse_response(result.stdout)
+        raw = call_llm(prompt, self.config)
+        return self._parse_response(raw)

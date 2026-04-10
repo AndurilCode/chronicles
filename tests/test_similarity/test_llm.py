@@ -1,5 +1,5 @@
 """Tests for LLM-backed similarity engine."""
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from chronicles.config import SimilarityConfig, LLMConfig
 from chronicles.similarity.llm import LLMSimilarityEngine
@@ -11,47 +11,43 @@ def _make_engine():
     return LLMSimilarityEngine(sim_config, llm_config)
 
 
-@patch("chronicles.similarity.llm.subprocess.run")
-def test_score_parses_llm_response(mock_run):
-    mock_run.return_value = MagicMock(returncode=0, stdout="7\n", stderr="")
+@patch("chronicles.llm_utils._call_cli")
+def test_score_parses_llm_response(mock_cli):
+    mock_cli.return_value = "7\n"
     engine = _make_engine()
     result = engine.score("OAuth token refresh", "Token refresh mechanism")
     assert result == 0.7
-    mock_run.assert_called_once()
+    mock_cli.assert_called_once()
 
 
-@patch("chronicles.similarity.llm.subprocess.run")
-def test_score_clamps_to_range(mock_run):
-    mock_run.return_value = MagicMock(returncode=0, stdout="12\n", stderr="")
+@patch("chronicles.llm_utils._call_cli")
+def test_score_clamps_to_range(mock_cli):
+    mock_cli.return_value = "12\n"
     engine = _make_engine()
     assert engine.score("a", "b") == 1.0
 
-    mock_run.return_value = MagicMock(returncode=0, stdout="-3\n", stderr="")
+    mock_cli.return_value = "-3\n"
     assert engine.score("a", "b") == 0.0
 
 
-@patch("chronicles.similarity.llm.subprocess.run")
-def test_score_returns_zero_on_llm_failure(mock_run):
-    mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="error")
+@patch("chronicles.llm_utils._call_cli")
+def test_score_returns_zero_on_llm_failure(mock_cli):
+    mock_cli.side_effect = RuntimeError("CLI failed")
     engine = _make_engine()
     assert engine.score("a", "b") == 0.0
 
 
-@patch("chronicles.similarity.llm.subprocess.run")
-def test_score_returns_zero_on_non_numeric(mock_run):
-    mock_run.return_value = MagicMock(returncode=0, stdout="these are similar\n", stderr="")
+@patch("chronicles.llm_utils._call_cli")
+def test_score_returns_zero_on_non_numeric(mock_cli):
+    mock_cli.return_value = "these are similar\n"
     engine = _make_engine()
     assert engine.score("a", "b") == 0.0
 
 
-@patch("chronicles.similarity.llm.subprocess.run")
-def test_batch_score_filters_by_threshold(mock_run):
+@patch("chronicles.llm_utils._call_cli")
+def test_batch_score_filters_by_threshold(mock_cli):
     # 3 items = 3 pairs: (0,1), (0,2), (1,2)
-    mock_run.side_effect = [
-        MagicMock(returncode=0, stdout="8\n", stderr=""),
-        MagicMock(returncode=0, stdout="3\n", stderr=""),
-        MagicMock(returncode=0, stdout="9\n", stderr=""),
-    ]
+    mock_cli.side_effect = ["8\n", "3\n", "9\n"]
     engine = _make_engine()
     results = engine.batch_score(["A", "B", "C"], threshold=0.7)
     assert len(results) == 2
@@ -59,14 +55,14 @@ def test_batch_score_filters_by_threshold(mock_run):
     assert (1, 2, 0.9) in results
 
 
-@patch("chronicles.similarity.llm.subprocess.run")
-def test_batch_score_empty_list(mock_run):
+@patch("chronicles.llm_utils._call_cli")
+def test_batch_score_empty_list(mock_cli):
     engine = _make_engine()
     assert engine.batch_score([], threshold=0.5) == []
 
 
-@patch("chronicles.similarity.llm.subprocess.run")
-def test_batch_score_single_item(mock_run):
+@patch("chronicles.llm_utils._call_cli")
+def test_batch_score_single_item(mock_cli):
     engine = _make_engine()
     assert engine.batch_score(["A"], threshold=0.5) == []
 

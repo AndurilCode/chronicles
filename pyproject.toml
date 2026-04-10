@@ -18,6 +18,7 @@ classifiers = [
 ]
 dependencies = [
     "jinja2>=3.1",
+    "json-repair>=0.58.7",
     "pyyaml>=6.0",
 ]
 

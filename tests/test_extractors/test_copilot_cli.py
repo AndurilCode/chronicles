@@ -2,7 +2,7 @@
 import json
 from unittest.mock import patch, MagicMock
 from chronicles.config import LLMConfig
-from chronicles.extractors.copilot_cli import CopilotCLIExtractor
+from chronicles.extractor import Extractor
 from chronicles.models import Message, CleanedTranscript, TranscriptMetadata, ExtractionResult
 
 def _make_cleaned_transcript() -> CleanedTranscript:
@@ -20,7 +20,7 @@ def _make_cleaned_transcript() -> CleanedTranscript:
 
 def test_builds_prompt():
     config = LLMConfig(provider="copilot-cli", model="gpt-5-mini")
-    extractor = CopilotCLIExtractor(config)
+    extractor = Extractor(config)
     transcript = _make_cleaned_transcript()
     prompt = extractor._build_prompt(transcript)
     assert "Fix the bug" in prompt
@@ -28,7 +28,7 @@ def test_builds_prompt():
 
 def test_parses_llm_json_response():
     config = LLMConfig(provider="copilot-cli", model="gpt-5-mini")
-    extractor = CopilotCLIExtractor(config)
+    extractor = Extractor(config)
     raw_json = json.dumps({
         "branch": "fix/bug", "status": "complete", "tags": ["bugfix"],
         "duration": "5min", "files_changed": ["src/auth.py"],
@@ -42,32 +42,28 @@ def test_parses_llm_json_response():
     assert result.branch == "fix/bug"
     assert result.status == "complete"
 
-@patch("chronicles.extractors.copilot_cli.subprocess.run")
-def test_extract_calls_copilot(mock_run):
-    mock_run.return_value = MagicMock(
-        returncode=0,
-        stdout=json.dumps({
-            "branch": "fix/bug", "status": "complete", "tags": [],
-            "duration": "5min", "files_changed": [],
-            "objective": "Fix", "outcome": "Fixed",
-            "decisions": [], "problems": [], "discovered": [],
-            "continuity": {"unfinished": [], "open_questions": [], "next": []},
-            "wiki_instructions": [],
-        }),
-    )
+@patch("chronicles.llm_utils._call_cli")
+def test_extract_calls_copilot(mock_cli):
+    mock_cli.return_value = json.dumps({
+        "branch": "fix/bug", "status": "complete", "tags": [],
+        "duration": "5min", "files_changed": [],
+        "objective": "Fix", "outcome": "Fixed",
+        "decisions": [], "problems": [], "discovered": [],
+        "continuity": {"unfinished": [], "open_questions": [], "next": []},
+        "wiki_instructions": [],
+    })
     config = LLMConfig(provider="copilot-cli", model="gpt-5-mini")
-    extractor = CopilotCLIExtractor(config)
+    extractor = Extractor(config)
     result = extractor.extract(_make_cleaned_transcript())
     assert result.branch == "fix/bug"
-    mock_run.assert_called_once()
-    call_args = mock_run.call_args
-    cmd = call_args[0][0]
+    mock_cli.assert_called_once()
+    cmd = mock_cli.call_args[0][0]
     assert "copilot" in cmd[0]
     assert "--model" in cmd
 
 def test_prompt_includes_few_shot_example():
     config = LLMConfig(provider="copilot-cli", model="gpt-5-mini")
-    extractor = CopilotCLIExtractor(config)
+    extractor = Extractor(config)
     transcript = _make_cleaned_transcript()
     prompt = extractor._build_prompt(transcript)
     assert "EXAMPLE OUTPUT" in prompt
@@ -76,7 +72,7 @@ def test_prompt_includes_few_shot_example():
 
 def test_normalizes_status_enum():
     config = LLMConfig(provider="copilot-cli", model="gpt-5-mini")
-    extractor = CopilotCLIExtractor(config)
+    extractor = Extractor(config)
     raw_json = json.dumps({
         "branch": "fix/bug", "status": "Completed", "tags": ["bugfix"],
         "duration": "5min", "files_changed": ["src/auth.py"],
@@ -91,7 +87,7 @@ def test_normalizes_status_enum():
 
 def test_normalizes_article_type_and_confidence():
     config = LLMConfig(provider="copilot-cli", model="gpt-5-mini")
-    extractor = CopilotCLIExtractor(config)
+    extractor = Extractor(config)
     raw_json = json.dumps({
         "branch": "fix/bug", "status": "complete", "tags": [],
         "duration": "5min", "files_changed": [],
@@ -115,7 +111,7 @@ def test_normalizes_article_type_and_confidence():
 
 def test_ensures_list_fields():
     config = LLMConfig(provider="copilot-cli", model="gpt-5-mini")
-    extractor = CopilotCLIExtractor(config)
+    extractor = Extractor(config)
     raw_json = json.dumps({
         "branch": "fix/bug", "status": "complete", "tags": "single-tag",
         "duration": "5min", "files_changed": "single-file.py",
@@ -131,7 +127,7 @@ def test_ensures_list_fields():
 
 def test_prompt_includes_contested_context():
     config = LLMConfig(provider="copilot-cli", model="gpt-5-mini")
-    extractor = CopilotCLIExtractor(config)
+    extractor = Extractor(config)
     transcript = _make_cleaned_transcript()
     wiki_context = [
         {"title": "Refresh Strategy", "type": "decision", "tags": ["auth"],
@@ -144,7 +140,7 @@ def test_prompt_includes_contested_context():
 
 def test_prompt_includes_relationship_schema():
     config = LLMConfig(provider="copilot-cli", model="gpt-5-mini")
-    extractor = CopilotCLIExtractor(config)
+    extractor = Extractor(config)
     transcript = _make_cleaned_transcript()
     prompt = extractor._build_prompt(transcript)
     assert '"relationships"' in prompt

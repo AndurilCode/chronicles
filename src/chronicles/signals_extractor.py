@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import json
-import re
-import subprocess
+
+from json_repair import repair_json
 
 from chronicles.config import LLMConfig
+from chronicles.llm_utils import call_llm
 from chronicles.models import CleanedTranscript, Signal, SignalsResult
 
 _AGENT_PROMPT = """\
@@ -143,7 +144,7 @@ def _summarize_result(tool_name: str, content: str) -> str:
 
 
 class SignalsExtractor:
-    """Uses the Claude CLI (`claude --print`) to extract agentic signals."""
+    """Uses the configured LLM provider to extract agentic signals."""
 
     def __init__(self, config: LLMConfig) -> None:
         self.config = config
@@ -211,10 +212,9 @@ class SignalsExtractor:
         try:
             data = json.loads(text)
         except json.JSONDecodeError:
-            repaired = self._repair_json(text)
             try:
-                data = json.loads(repaired)
-            except json.JSONDecodeError as e:
+                data = json.loads(repair_json(text))
+            except (json.JSONDecodeError, ValueError) as e:
                 raise RuntimeError(
                     f"Failed to parse LLM JSON: {e}\nResponse: {text[:500]}"
                 ) from e
@@ -249,13 +249,6 @@ class SignalsExtractor:
         return SignalsResult(signals=signals, demotions=demotions)
 
     @staticmethod
-    def _repair_json(text: str) -> str:
-        """Attempt basic JSON repairs for common LLM output issues."""
-        # Remove trailing commas before ] or }
-        text = re.sub(r",\s*([}\]])", r"\1", text)
-        return text
-
-    @staticmethod
     def _normalize_enum(value: str, valid: set[str], default: str) -> str:
         """Normalize an enum value: lowercase, strip, fuzzy match."""
         if not isinstance(value, str):
@@ -269,13 +262,7 @@ class SignalsExtractor:
         return default
 
     def _call_llm(self, prompt: str) -> str:
-        cmd = ["claude", "--print", "--model", self.config.model, prompt]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"claude CLI failed (exit {result.returncode}): {result.stderr}"
-            )
-        return result.stdout
+        return call_llm(prompt, self.config)
 
     def extract(
         self,
