@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from chronicles.config import load_config
-from chronicles.init import run_init
+from chronicles.init import run_init, _ensure_dir
 from chronicles.cleaner import clean_transcript
 from chronicles.enricher import enrich
 from chronicles.extractor import Extractor
@@ -164,32 +164,10 @@ def _load_wiki_context(chronicles_dir: Path) -> list[dict]:
     return context
 
 
-def _ensure_chronicles_dir(chronicles_dir: Path) -> None:
-    """Bootstrap chronicles directory structure if it doesn't exist."""
-    for subdir in ["records", "archives", "wiki/articles", "wiki/categories", "wiki/queries"]:
-        (chronicles_dir / subdir).mkdir(parents=True, exist_ok=True)
-
-    chronicles_md = chronicles_dir / "CHRONICLES.md"
-    if not chronicles_md.exists():
-        from datetime import date
-        chronicles_md.write_text(
-            f"---\ntype: chronicles-index\nlast_updated: {date.today().isoformat()}\n"
-            f"record_count: 0\n---\n\n# Chronicles\n"
-        )
-
-    gold_md = chronicles_dir / "GOLD.md"
-    if not gold_md.exists():
-        from datetime import date
-        gold_md.write_text(
-            f"---\ntype: gold-index\nlast_updated: {date.today().isoformat()}\n"
-            f"promoted_count: 0\n---\n\n# Gold Notes\n\n"
-            f"> High-confidence, validated knowledge for this repository. Read before acting.\n"
-        )
-
 
 def _run_ingest(args: argparse.Namespace) -> None:
     chronicles_dir = args.chronicles_dir.resolve()
-    _ensure_chronicles_dir(chronicles_dir)
+    _ensure_dir(chronicles_dir)
     config = load_config(chronicles_dir)
     renderer = TemplateRenderer()
     extractor = Extractor(config.llm.for_step("extract"))
@@ -273,13 +251,13 @@ def _run_ingest(args: argparse.Namespace) -> None:
 
 def _run_lint(args: argparse.Namespace) -> None:
     chronicles_dir = args.chronicles_dir.resolve()
-    _ensure_chronicles_dir(chronicles_dir)
+    _ensure_dir(chronicles_dir)
     _run_lint_internal(chronicles_dir)
 
 
 def _run_enrich(args: argparse.Namespace) -> None:
     chronicles_dir = args.chronicles_dir.resolve()
-    _ensure_chronicles_dir(chronicles_dir)
+    _ensure_dir(chronicles_dir)
     config = load_config(chronicles_dir)
     _run_enrich_internal(chronicles_dir, config)
 
@@ -304,7 +282,7 @@ def _run_lint_internal(chronicles_dir: Path) -> None:
 
 def _run_signals(args: argparse.Namespace) -> None:
     chronicles_dir = args.chronicles_dir.resolve()
-    _ensure_chronicles_dir(chronicles_dir)
+    _ensure_dir(chronicles_dir)
     config = load_config(chronicles_dir)
 
     paths: list[Path] = list(args.paths) if args.paths else []
