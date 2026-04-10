@@ -2,6 +2,13 @@
 # SessionEnd hook — extract agentic signals from completed session
 set -uo pipefail
 
+# Guard against infinite recursion: signals calls `claude --print`,
+# which triggers SessionEnd, which would call signals again.
+if [ "${CHRONICLES_RUNNING:-}" = "1" ]; then
+    exit 0
+fi
+export CHRONICLES_RUNNING=1
+
 INPUT=$(cat)
 
 CWD=$(echo "$INPUT" | python3 -c "

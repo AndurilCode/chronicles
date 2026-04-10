@@ -4,6 +4,13 @@
 
 set -uo pipefail
 
+# Guard against infinite recursion: chronicles ingest calls `claude --print`,
+# which triggers SessionEnd, which would call ingest again.
+if [ "${CHRONICLES_RUNNING:-}" = "1" ]; then
+    exit 0
+fi
+export CHRONICLES_RUNNING=1
+
 # Read stdin JSON
 INPUT=$(cat)
 CWD=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null || true)
