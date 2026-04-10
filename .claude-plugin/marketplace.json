@@ -7,7 +7,7 @@
   "plugins": [
     {
       "name": "chronicles",
-      "version": "0.2.4",
+      "version": "0.2.5",
       "description": "Auto-extract knowledge from agent sessions into a codebase wiki",
       "source": "./plugin"
     }
