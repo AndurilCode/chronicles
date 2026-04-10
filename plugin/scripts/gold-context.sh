@@ -6,8 +6,16 @@ set -euo pipefail
 
 # Read stdin JSON
 INPUT=$(cat)
-CWD=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null || true)
+read -r CWD EVENT_NAME < <(echo "$INPUT" | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    print(d.get('cwd', '.'), d.get('hook_event_name', 'SessionStart'))
+except Exception:
+    print('. SessionStart')
+" 2>/dev/null)
 CWD="${CWD:-.}"
+EVENT_NAME="${EVENT_NAME:-SessionStart}"
 
 # Resolve chronicles directory
 DIR="${CLAUDE_PLUGIN_OPTION_CHRONICLES_DIR:-${CHRONICLES_DIR:-chronicles}}"
@@ -47,12 +55,13 @@ ${GOLD_CONTENT}"
 fi
 
 # Output as structured JSON for the platform
-python3 -c "
+HOOK_EVENT_NAME="$EVENT_NAME" python3 -c "
 import json, os, sys
 context = sys.stdin.read()
+event = os.environ.get('HOOK_EVENT_NAME', 'SessionStart')
 if os.environ.get('CLAUDE_PLUGIN_ROOT'):
     # Claude Code format
-    print(json.dumps({'hookSpecificOutput': {'hookEventName': 'SessionStart', 'additionalContext': context}}))
+    print(json.dumps({'hookSpecificOutput': {'hookEventName': event, 'additionalContext': context}}))
 else:
     # Copilot CLI / default format
     print(json.dumps({'additionalContext': context}))

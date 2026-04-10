@@ -4,13 +4,16 @@ set -euo pipefail
 
 INPUT=$(cat)
 
-CWD=$(echo "$INPUT" | python3 -c "
+# Extract cwd and hook event name from input
+read -r CWD EVENT_NAME < <(echo "$INPUT" | python3 -c "
 import sys, json
 try:
-    print(json.load(sys.stdin).get('cwd', ''))
+    d = json.load(sys.stdin)
+    print(d.get('cwd', ''), d.get('hook_event_name', 'SessionStart'))
 except Exception:
-    print('')
+    print(' SessionStart')
 " 2>/dev/null)
+EVENT_NAME="${EVENT_NAME:-SessionStart}"
 
 DIR="${CHRONICLES_DIR:-chronicles}"
 CHRONICLES_DIR="${CWD}/${DIR}"
@@ -47,11 +50,12 @@ fi
 CONTEXT="Operational signals from past sessions — follow these rules:
 ${SIGNALS}"
 
-python3 -c "
+HOOK_EVENT_NAME="$EVENT_NAME" python3 -c "
 import json, os, sys
 context = sys.stdin.read()
+event = os.environ.get('HOOK_EVENT_NAME', 'SessionStart')
 if os.environ.get('CLAUDE_PLUGIN_ROOT'):
-    print(json.dumps({'hookSpecificOutput': {'hookEventName': 'SessionStart', 'additionalContext': context}}))
+    print(json.dumps({'hookSpecificOutput': {'hookEventName': event, 'additionalContext': context}}))
 else:
     print(json.dumps({'additionalContext': context}))
 " <<< "$CONTEXT"
