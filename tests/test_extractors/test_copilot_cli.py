@@ -1,6 +1,6 @@
 """Tests for Copilot CLI extractor."""
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from chronicles.config import LLMConfig
 from chronicles.extractor import Extractor
 from chronicles.models import Message, CleanedTranscript, TranscriptMetadata, ExtractionResult

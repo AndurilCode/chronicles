@@ -1,6 +1,6 @@
 """Tests for extraction with the claude-code provider."""
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from chronicles.config import LLMConfig
 from chronicles.extractor import Extractor
 from chronicles.models import Message, CleanedTranscript, TranscriptMetadata

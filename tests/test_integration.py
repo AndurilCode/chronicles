@@ -188,7 +188,7 @@ def test_conflict_resolution_lifecycle(chronicles_dir):
 
     # Run lint — should mark as contested
     with patch("chronicles.linter._get_similarity_engine", return_value=None):
-        report = lint(chronicles_dir)
+        lint(chronicles_dir)
 
     content = (articles_dir / "auth-pattern.md").read_text()
     assert "confidence: contested" in content
@@ -212,7 +212,7 @@ def test_conflict_resolution_lifecycle(chronicles_dir):
 
     # Run lint again — should resolve
     with patch("chronicles.linter._get_similarity_engine", return_value=None):
-        report2 = lint(chronicles_dir)
+        lint(chronicles_dir)
 
     content = (articles_dir / "auth-pattern.md").read_text()
     assert "confidence: high" in content
