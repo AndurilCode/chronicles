@@ -1,6 +1,8 @@
 """Init command — scaffold chronicles directory and generate config.yaml."""
 from __future__ import annotations
 
+from pathlib import Path
+
 VALID_PROVIDERS = ("claude-code", "copilot-cli", "ollama")
 VALID_SOURCES = ("claude-code", "copilot-cli", "copilot-vscode")
 
@@ -133,3 +135,87 @@ def prompt_ollama() -> tuple[str, int]:
     timeout_str = input("Ollama timeout in seconds [300]: ").strip()
     timeout = int(timeout_str) if timeout_str else 300
     return base_url, timeout
+
+
+def run_init(
+    chronicles_dir: Path,
+    provider: str | None = None,
+    model: str | None = None,
+    sources: list[str] | None = None,
+    ollama_base_url: str = "http://localhost:11434",
+    ollama_timeout: int = 300,
+) -> None:
+    """Scaffold chronicles directory and generate config.yaml.
+
+    If provider/model/sources are None, prompts interactively.
+    """
+    # Interactive prompts for missing values
+    if provider is None:
+        provider = prompt_provider()
+    if model is None:
+        model = prompt_model()
+    if sources is None:
+        sources = prompt_sources()
+
+    # Prompt for ollama settings if interactive and provider is ollama
+    if provider == "ollama" and _is_interactive():
+        ollama_base_url, ollama_timeout = prompt_ollama()
+
+    # Scaffold directory structure
+    _ensure_dir(chronicles_dir)
+
+    # Generate config
+    config_path = chronicles_dir / "config.yaml"
+    if config_path.exists():
+        print(f"{config_path} already exists, skipping config generation.")
+        print(f"Verified chronicles directory structure in ./{chronicles_dir}")
+        return
+
+    config_text = generate_config(
+        provider=provider,
+        model=model,
+        sources=sources,
+        ollama_base_url=ollama_base_url,
+        ollama_timeout=ollama_timeout,
+    )
+    config_path.write_text(config_text)
+
+    print(f"Initialized chronicles in ./{chronicles_dir}\n")
+    print(f"Config written to {config_path}\n")
+    print("To enable automatic ingestion, install the chronicles plugin:")
+    print("  Claude Code:")
+    print("    claude plugin marketplace add AndurilCode/chronicles")
+    print("    claude plugin install chronicles@chronicles")
+    print("  Copilot CLI:")
+    print("    copilot plugin install AndurilCode/chronicles:plugin")
+    print()
+    print("Run 'chronicles ingest' to process your first sessions.")
+
+
+def _ensure_dir(chronicles_dir: Path) -> None:
+    """Bootstrap chronicles directory structure if it doesn't exist."""
+    from datetime import date
+
+    for subdir in ["records", "archives", "wiki/articles", "wiki/categories", "wiki/queries"]:
+        (chronicles_dir / subdir).mkdir(parents=True, exist_ok=True)
+
+    chronicles_md = chronicles_dir / "CHRONICLES.md"
+    if not chronicles_md.exists():
+        chronicles_md.write_text(
+            f"---\ntype: chronicles-index\nlast_updated: {date.today().isoformat()}\n"
+            f"record_count: 0\n---\n\n# Chronicles\n"
+        )
+
+    gold_md = chronicles_dir / "GOLD.md"
+    if not gold_md.exists():
+        gold_md.write_text(
+            f"---\ntype: gold-index\nlast_updated: {date.today().isoformat()}\n"
+            f"promoted_count: 0\n---\n\n# Gold Notes\n\n"
+            f"> High-confidence, validated knowledge for this repository. Read before acting.\n"
+        )
+
+
+def _is_interactive() -> bool:
+    """Check if stdin is a terminal (interactive)."""
+    import sys
+    return sys.stdin.isatty()

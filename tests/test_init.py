@@ -1,5 +1,6 @@
 """Tests for chronicles init command."""
 from chronicles.init import generate_config, prompt_provider, prompt_model, prompt_sources, prompt_ollama
+from chronicles.init import run_init
 
 
 def test_generate_config_claude_code():
@@ -110,3 +111,74 @@ def test_prompt_ollama_custom(monkeypatch):
     base_url, timeout = prompt_ollama()
     assert base_url == "http://myhost:11434"
     assert timeout == 600
+
+
+def test_run_init_creates_structure(tmp_path):
+    chronicles_dir = tmp_path / "chronicles"
+    run_init(
+        chronicles_dir=chronicles_dir,
+        provider="claude-code",
+        model="haiku",
+        sources=["claude-code"],
+    )
+    assert (chronicles_dir / "config.yaml").exists()
+    assert (chronicles_dir / "CHRONICLES.md").exists()
+    assert (chronicles_dir / "GOLD.md").exists()
+    assert (chronicles_dir / "records").is_dir()
+    assert (chronicles_dir / "wiki" / "articles").is_dir()
+
+    config_text = (chronicles_dir / "config.yaml").read_text()
+    assert "provider: claude-code" in config_text
+    assert "model: haiku" in config_text
+
+
+def test_run_init_skips_existing_config(tmp_path, capsys):
+    chronicles_dir = tmp_path / "chronicles"
+    chronicles_dir.mkdir()
+    (chronicles_dir / "config.yaml").write_text("llm:\n  provider: ollama\n")
+
+    run_init(
+        chronicles_dir=chronicles_dir,
+        provider="claude-code",
+        model="haiku",
+        sources=["claude-code"],
+    )
+
+    # Config should NOT be overwritten
+    assert "ollama" in (chronicles_dir / "config.yaml").read_text()
+    captured = capsys.readouterr()
+    assert "already exists" in captured.out
+
+
+def test_run_init_creates_missing_dirs(tmp_path):
+    chronicles_dir = tmp_path / "chronicles"
+    chronicles_dir.mkdir()
+    (chronicles_dir / "config.yaml").write_text("llm:\n  provider: claude-code\n")
+    # records/ and wiki/ don't exist yet
+
+    run_init(
+        chronicles_dir=chronicles_dir,
+        provider="claude-code",
+        model="haiku",
+        sources=["claude-code"],
+    )
+
+    assert (chronicles_dir / "records").is_dir()
+    assert (chronicles_dir / "wiki" / "articles").is_dir()
+    assert (chronicles_dir / "CHRONICLES.md").exists()
+    assert (chronicles_dir / "GOLD.md").exists()
+
+
+def test_run_init_interactive(tmp_path, monkeypatch):
+    chronicles_dir = tmp_path / "chronicles"
+    responses = iter(["2", "gpt-5-mini", "1,2"])
+    monkeypatch.setattr("builtins.input", lambda _: next(responses))
+
+    run_init(chronicles_dir=chronicles_dir)
+
+    config_text = (chronicles_dir / "config.yaml").read_text()
+    assert "provider: copilot-cli" in config_text
+    assert "model: gpt-5-mini" in config_text
+    assert "- claude-code" in config_text
+    assert "- copilot-cli" in config_text
+    assert "- copilot-vscode" not in config_text
