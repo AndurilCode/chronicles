@@ -20,11 +20,14 @@ except Exception:
     print('')
 " 2>/dev/null)
 
-DIR="${CHRONICLES_DIR:-chronicles}"
+DIR="${CLAUDE_PLUGIN_OPTION_CHRONICLES_DIR:-${CHRONICLES_DIR:-chronicles}}"
 CHRONICLES_DIR="${CWD}/${DIR}"
 
 # Only run if chronicles directory exists
-[ -d "$CHRONICLES_DIR" ] || exit 0
+if [ ! -d "$CHRONICLES_DIR" ]; then
+    echo "chronicles: skipping signals — $CHRONICLES_DIR not found" >&2
+    exit 0
+fi
 
 if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
     uvx --from "git+https://github.com/AndurilCode/chronicles[tfidf]" \

@@ -20,12 +20,18 @@ except Exception:
     print('')
 " 2>/dev/null)
 
-DIR="${CHRONICLES_DIR:-chronicles}"
+DIR="${CLAUDE_PLUGIN_OPTION_CHRONICLES_DIR:-${CHRONICLES_DIR:-chronicles}}"
 CHRONICLES_DIR="${CWD}/${DIR}"
 
 # Only run if chronicles directory exists and transcript is available
-[ -d "$CHRONICLES_DIR" ] || exit 0
-[ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ] || exit 0
+if [ ! -d "$CHRONICLES_DIR" ]; then
+    echo "chronicles: skipping subagent signals — $CHRONICLES_DIR not found" >&2
+    exit 0
+fi
+if [ -z "$TRANSCRIPT" ] || [ ! -f "$TRANSCRIPT" ]; then
+    echo "chronicles: skipping subagent signals — no transcript at '$TRANSCRIPT'" >&2
+    exit 0
+fi
 
 # Check if subagent extraction is enabled in config
 ENABLED=$(python3 -c "

@@ -15,7 +15,10 @@ DIR="${CLAUDE_PLUGIN_OPTION_CHRONICLES_DIR:-${CHRONICLES_DIR:-chronicles}}"
 CHRONICLES_DIR="${CWD}/${DIR}"
 
 # Guard: only activate in projects with a chronicles directory
-[ -d "$CHRONICLES_DIR" ] || exit 0
+if [ ! -d "$CHRONICLES_DIR" ]; then
+    echo "chronicles: skipping ingest — $CHRONICLES_DIR not found" >&2
+    exit 0
+fi
 
 # Check uvx is available
 if ! command -v uvx &>/dev/null; then
