@@ -1,5 +1,4 @@
 """Tests for signals writer — maintains SIGNALS.md."""
-from pathlib import Path
 
 from chronicles.models import Signal, SignalsResult
 from chronicles.signals_writer import update_signals_file, load_active_signals
@@ -74,7 +73,7 @@ def test_high_severity_at_top(tmp_path):
     update_signals_file(signals_path, result, session_id="ghi789")
     content = signals_path.read_text()
     active_section = content.split("## Active")[1].split("## Demoted")[0]
-    lines = [l for l in active_section.strip().split("\n") if l.startswith("- ")]
+    lines = [line for line in active_section.strip().split("\n") if line.startswith("- ")]
     assert "High severity rule" in lines[0]
 
 
@@ -148,9 +147,9 @@ def test_caps_at_max_signals(tmp_path):
     update_signals_file(signals_path, result, session_id="cap123", max_active=50)
     content = signals_path.read_text()
     active = content.split("## Active")[1].split("## Demoted")[0]
-    lines = [l for l in active.strip().split("\n") if l.startswith("- ")]
+    lines = [line for line in active.strip().split("\n") if line.startswith("- ")]
     assert len(lines) <= 50
-    assert any("Brand new rule" in l for l in lines)
+    assert any("Brand new rule" in line for line in lines)
 
 
 def test_load_active_signals(tmp_path):

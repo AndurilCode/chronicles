@@ -222,7 +222,7 @@ class CopilotCLISource(BaseSource):
                         elif isinstance(result_obj, str):
                             result_text = result_obj
                         # Find canonical name from most recent tool_call
-                        tool_call_id = data.get("toolCallId", "")
+                        data.get("toolCallId", "")
                         for m in reversed(messages):
                             if m.role == "tool_call":
                                 raw_name = m.tool_name

@@ -1,5 +1,4 @@
 """Tests for template rendering."""
-from pathlib import Path
 
 from chronicles.templates import TemplateRenderer
 

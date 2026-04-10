@@ -3,7 +3,7 @@ import json
 from unittest.mock import patch, MagicMock
 
 from chronicles.cli import main
-from chronicles.models import Signal, SignalsResult
+from chronicles.models import SignalsResult
 
 
 def test_signals_command_runs_pipeline(chronicles_dir, tmp_path):

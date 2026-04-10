@@ -4,7 +4,7 @@ from unittest.mock import patch, MagicMock
 
 from chronicles.config import LLMConfig
 from chronicles.models import (
-    CleanedTranscript, TranscriptMetadata, Message, Signal, SignalsResult,
+    CleanedTranscript, TranscriptMetadata, Message, SignalsResult,
 )
 from chronicles.signals_extractor import SignalsExtractor
 

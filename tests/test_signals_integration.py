@@ -1,12 +1,8 @@
 """Integration test: full signals pipeline from transcript to SIGNALS.md."""
-import json
-from unittest.mock import patch, MagicMock
 
 from chronicles.models import Message, Transcript, Signal, SignalsResult
 from chronicles.signals_cleaner import clean_transcript_for_signals
-from chronicles.signals_extractor import SignalsExtractor
 from chronicles.signals_writer import update_signals_file, load_active_signals
-from chronicles.config import LLMConfig
 
 
 def test_full_signals_pipeline(tmp_path):

@@ -49,7 +49,7 @@ def test_lint_promotes_low_to_medium(chronicles_dir):
     _write_article(chronicles_dir, "multi-source",
                    confidence="low",
                    sources=["2026-04-01_session-a", "2026-04-05_session-b"])
-    report = lint(chronicles_dir)
+    lint(chronicles_dir)
     content = (chronicles_dir / "wiki" / "articles" / "multi-source.md").read_text()
     assert "confidence: medium" in content
 
@@ -58,7 +58,7 @@ def test_lint_promotes_medium_to_high(chronicles_dir):
     _write_article(chronicles_dir, "well-confirmed",
                    confidence="medium",
                    sources=["s1", "s2", "s3"])
-    report = lint(chronicles_dir)
+    lint(chronicles_dir)
     content = (chronicles_dir / "wiki" / "articles" / "well-confirmed.md").read_text()
     assert "confidence: high" in content
 
@@ -66,14 +66,14 @@ def test_lint_promotes_medium_to_high(chronicles_dir):
 def test_lint_regenerates_gold(chronicles_dir):
     _write_article(chronicles_dir, "gold-article",
                    confidence="high", article_type="convention")
-    report = lint(chronicles_dir)
+    lint(chronicles_dir)
     gold = (chronicles_dir / "GOLD.md").read_text()
     assert "gold-article" in gold
 
 
 def test_lint_gold_excludes_low_confidence(chronicles_dir):
     _write_article(chronicles_dir, "low-article", confidence="low")
-    report = lint(chronicles_dir)
+    lint(chronicles_dir)
     gold = (chronicles_dir / "GOLD.md").read_text()
     assert "low-article" not in gold
 
@@ -85,7 +85,7 @@ def test_lint_detects_and_merges_duplicates(chronicles_dir):
     _write_article(chronicles_dir, "conn-suffix-pattern",
                    confidence="low", tags=["naming"],
                    sources=["2026-04-05_session-b"])
-    report = lint(chronicles_dir)
+    lint(chronicles_dir)
     articles = list((chronicles_dir / "wiki" / "articles").glob("*.md"))
     assert len(articles) == 1
     content = articles[0].read_text()
@@ -98,7 +98,7 @@ def test_lint_no_merge_for_different_topics(chronicles_dir):
                    article_type="convention", tags=["auth"])
     _write_article(chronicles_dir, "retry-pattern", confidence="low",
                    article_type="pattern", tags=["retry"])
-    report = lint(chronicles_dir)
+    lint(chronicles_dir)
     articles = list((chronicles_dir / "wiki" / "articles").glob("*.md"))
     assert len(articles) == 2
 
@@ -119,7 +119,7 @@ def test_lint_marks_contested(chronicles_dir):
         "# refactor\n\n## Discovered\n"
         "- [convention] Use camelCase, not snake_case — contradicts [[old-convention]]\n"
     )
-    report = lint(chronicles_dir)
+    lint(chronicles_dir)
     content = path.read_text()
     assert "confidence: contested" in content
     assert "previous_confidence: high" in content
@@ -208,7 +208,7 @@ def test_semantic_dedup_merges_similar_articles(chronicles_dir):
     mock_engine.config = MagicMock(threshold=0.7)
 
     with patch("chronicles.linter._get_similarity_engine", return_value=mock_engine):
-        report = lint(chronicles_dir)
+        lint(chronicles_dir)
 
     articles = list((chronicles_dir / "wiki" / "articles").glob("*.md"))
     assert len(articles) == 1
@@ -230,7 +230,7 @@ def test_semantic_dedup_fallback_without_engine(chronicles_dir):
                    sources=["2026-04-05_session-b"])
 
     with patch("chronicles.linter._get_similarity_engine", return_value=None):
-        report = lint(chronicles_dir)
+        lint(chronicles_dir)
 
     articles = list((chronicles_dir / "wiki" / "articles").glob("*.md"))
     assert len(articles) == 1
@@ -252,7 +252,7 @@ def test_semantic_dedup_respects_type_filter(chronicles_dir):
     mock_engine.config = MagicMock(threshold=0.7)
 
     with patch("chronicles.linter._get_similarity_engine", return_value=mock_engine):
-        report = lint(chronicles_dir)
+        lint(chronicles_dir)
 
     articles = list((chronicles_dir / "wiki" / "articles").glob("*.md"))
     assert len(articles) == 2
@@ -299,7 +299,7 @@ def test_decay_medium_to_low_requires_no_inbound_links(chronicles_dir):
     )
 
     with patch("chronicles.linter._get_similarity_engine", return_value=None):
-        report = lint(chronicles_dir)
+        lint(chronicles_dir)
 
     content = path.read_text()
     assert "confidence: medium" in content  # NOT demoted
@@ -316,7 +316,7 @@ def test_decay_archives_old_low_article(chronicles_dir):
     path.write_text(text)
 
     with patch("chronicles.linter._get_similarity_engine", return_value=None):
-        report = lint(chronicles_dir)
+        lint(chronicles_dir)
 
     assert not path.exists()
     archived = chronicles_dir / "wiki" / "archived" / "ancient-low.md"
@@ -334,7 +334,7 @@ def test_calibration_sets_promoted_on(chronicles_dir):
                    sources=["s1", "s2", "s3"])
 
     with patch("chronicles.linter._get_similarity_engine", return_value=None):
-        report = lint(chronicles_dir)
+        lint(chronicles_dir)
 
     content = (chronicles_dir / "wiki" / "articles" / "promoted-article.md").read_text()
     assert "confidence: high" in content
@@ -420,7 +420,7 @@ def test_resolve_contested_with_evidence(chronicles_dir):
     )
 
     with patch("chronicles.linter._get_similarity_engine", return_value=None):
-        report = lint(chronicles_dir)
+        lint(chronicles_dir)
 
     content = path.read_text()
     assert "confidence: high" in content
@@ -443,7 +443,7 @@ def test_regenerate_contested_md(chronicles_dir):
     )
 
     with patch("chronicles.linter._get_similarity_engine", return_value=None):
-        report = lint(chronicles_dir)
+        lint(chronicles_dir)
 
     contested_md = chronicles_dir / "CONTESTED.md"
     assert contested_md.exists()

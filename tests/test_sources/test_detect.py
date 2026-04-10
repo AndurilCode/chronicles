@@ -1,9 +1,7 @@
 """Tests for source auto-detection."""
 import json
-from pathlib import Path
 
 from chronicles.sources import detect_source, ALL_SOURCES
-from chronicles.sources.base import BaseSource
 
 
 def test_all_sources_registered():

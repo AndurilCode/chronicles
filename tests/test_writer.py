@@ -1,5 +1,4 @@
 """Tests for the writer — records, CHRONICLES.md, wiki pages."""
-from pathlib import Path
 from chronicles.models import ExtractionResult
 from chronicles.templates import TemplateRenderer
 from chronicles.writer import write_record, append_chronicles_entry, write_wiki_pages

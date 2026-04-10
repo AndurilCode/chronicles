@@ -1,6 +1,5 @@
 """Tests for Claude Code source adapter."""
 from pathlib import Path
-from chronicles.models import Message
 from chronicles.sources.claude_code import ClaudeCodeSource
 
 FIXTURES = Path(__file__).parent.parent / "fixtures"
