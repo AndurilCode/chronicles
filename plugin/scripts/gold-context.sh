@@ -1,42 +1,21 @@
 #!/bin/bash
 # Chronicles plugin — SessionStart hook
 # Injects orientation blurb + GOLD.md content as additional context.
-
 set -euo pipefail
+source "$(dirname "$0")/_common.sh"
 
-# Read stdin JSON
-INPUT=$(cat)
-read -r CWD EVENT_NAME < <(echo "$INPUT" | python3 -c "
-import sys, json
-try:
-    d = json.load(sys.stdin)
-    print(d.get('cwd', '.'), d.get('hook_event_name', 'SessionStart'))
-except Exception:
-    print('. SessionStart')
-" 2>/dev/null)
-CWD="${CWD:-.}"
-EVENT_NAME="${EVENT_NAME:-SessionStart}"
-
-# Resolve chronicles directory
-DIR="${CLAUDE_PLUGIN_OPTION_CHRONICLES_DIR:-${CHRONICLES_DIR:-chronicles}}"
-CHRONICLES_DIR="${CWD}/${DIR}"
-
-# Guard: only activate in projects with a chronicles directory
-[ -d "$CHRONICLES_DIR" ] || exit 0
+parse_input hook_event_name
+resolve_chronicles_dir
 
 GOLD_PATH="${CHRONICLES_DIR}/GOLD.md"
 
-# Check if GOLD.md has real content (not just empty frontmatter)
 has_gold_content() {
     [ -f "$GOLD_PATH" ] || return 1
     [ -s "$GOLD_PATH" ] || return 1
-    if grep -q "promoted_count: 0" "$GOLD_PATH" 2>/dev/null; then
-        return 1
-    fi
+    grep -q "promoted_count: 0" "$GOLD_PATH" 2>/dev/null && return 1
     return 0
 }
 
-# Build context string
 CONTEXT="This project uses Chronicles — an automatic knowledge wiki built from agent sessions.
 The chronicles wiki is at: ${DIR}/
 - GOLD.md: High-confidence validated knowledge. Read this for known conventions, decisions, and traps.
@@ -46,25 +25,12 @@ The chronicles wiki is at: ${DIR}/
 - wiki/categories/: Auto-generated topic clusters."
 
 if has_gold_content; then
-    GOLD_CONTENT=$(cat "$GOLD_PATH")
     CONTEXT="${CONTEXT}
 
 Validated project knowledge from GOLD.md:
 ---
-${GOLD_CONTENT}"
+$(cat "$GOLD_PATH")"
 fi
 
-# Output as structured JSON for the platform
-HOOK_EVENT_NAME="$EVENT_NAME" python3 -c "
-import json, os, sys
-context = sys.stdin.read()
-event = os.environ.get('HOOK_EVENT_NAME', 'SessionStart')
-if os.environ.get('CLAUDE_PLUGIN_ROOT'):
-    # Claude Code format
-    print(json.dumps({'hookSpecificOutput': {'hookEventName': event, 'additionalContext': context}}))
-else:
-    # Copilot CLI / default format
-    print(json.dumps({'additionalContext': context}))
-" <<< "$CONTEXT"
-
+emit_context "$CONTEXT"
 exit 0

@@ -1,29 +1,13 @@
 #!/bin/bash
 # SessionStart hook — inject active signals as context
 set -euo pipefail
+source "$(dirname "$0")/_common.sh"
 
-INPUT=$(cat)
-
-# Extract cwd and hook event name from input
-read -r CWD EVENT_NAME < <(echo "$INPUT" | python3 -c "
-import sys, json
-try:
-    d = json.load(sys.stdin)
-    print(d.get('cwd', ''), d.get('hook_event_name', 'SessionStart'))
-except Exception:
-    print(' SessionStart')
-" 2>/dev/null)
-EVENT_NAME="${EVENT_NAME:-SessionStart}"
-
-DIR="${CHRONICLES_DIR:-chronicles}"
-CHRONICLES_DIR="${CWD}/${DIR}"
+parse_input hook_event_name
+resolve_chronicles_dir
 
 SIGNALS_PATH="${CHRONICLES_DIR}/SIGNALS.md"
-
-# Only inject if SIGNALS.md exists and has active content
-if [ ! -f "$SIGNALS_PATH" ]; then
-    exit 0
-fi
+[ -f "$SIGNALS_PATH" ] || exit 0
 
 # Extract Steers + Active sections (skip Demoted)
 SIGNALS=$(python3 -c "
@@ -43,20 +27,7 @@ if parts:
     print('\n'.join(parts))
 " 2>/dev/null)
 
-if [ -z "$SIGNALS" ]; then
-    exit 0
-fi
+[ -z "$SIGNALS" ] && exit 0
 
-CONTEXT="Operational signals from past sessions — follow these rules:
+emit_context "Operational signals from past sessions — follow these rules:
 ${SIGNALS}"
-
-HOOK_EVENT_NAME="$EVENT_NAME" python3 -c "
-import json, os, sys
-context = sys.stdin.read()
-event = os.environ.get('HOOK_EVENT_NAME', 'SessionStart')
-if os.environ.get('CLAUDE_PLUGIN_ROOT'):
-    print(json.dumps({'hookSpecificOutput': {'hookEventName': event, 'additionalContext': context}}))
-else:
-    print(json.dumps({'additionalContext': context}))
-" <<< "$CONTEXT"
-

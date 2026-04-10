@@ -1,44 +1,11 @@
 #!/bin/bash
 # SubagentStop hook — extract agentic signals from completed subagent session
 set -uo pipefail
+source "$(dirname "$0")/_common.sh"
 
-# Guard against infinite recursion: signals calls `claude --print`,
-# which triggers SubagentStop, which would call signals again.
-if [ "${CHRONICLES_RUNNING:-}" = "1" ]; then
-    exit 0
-fi
-export CHRONICLES_RUNNING=1
-
-INPUT=$(cat)
-
-CWD=$(echo "$INPUT" | python3 -c "
-import sys, json
-try:
-    print(json.load(sys.stdin).get('cwd', ''))
-except Exception:
-    print('')
-" 2>/dev/null)
-
-TRANSCRIPT=$(echo "$INPUT" | python3 -c "
-import sys, json
-try:
-    print(json.load(sys.stdin).get('agent_transcript_path', ''))
-except Exception:
-    print('')
-" 2>/dev/null)
-
-DIR="${CLAUDE_PLUGIN_OPTION_CHRONICLES_DIR:-${CHRONICLES_DIR:-chronicles}}"
-CHRONICLES_DIR="${CWD}/${DIR}"
-
-# Only run if chronicles directory exists and transcript is available
-if [ ! -d "$CHRONICLES_DIR" ]; then
-    echo "chronicles: skipping subagent signals — $CHRONICLES_DIR not found" >&2
-    exit 0
-fi
-if [ -z "$TRANSCRIPT" ] || [ ! -f "$TRANSCRIPT" ]; then
-    echo "chronicles: skipping subagent signals — no transcript at '$TRANSCRIPT'" >&2
-    exit 0
-fi
+guard_recursion
+parse_input agent_transcript_path
+resolve_chronicles_dir
 
 # Check if subagent extraction is enabled in config
 ENABLED=$(python3 -c "
@@ -51,5 +18,12 @@ except Exception:
 " 2>/dev/null)
 [ "$ENABLED" = "False" ] && exit 0
 
+# Subagent requires transcript — no discovery fallback
+if [ -z "${TRANSCRIPT:-}" ] || [ ! -f "${TRANSCRIPT:-}" ]; then
+    echo "chronicles: skipping subagent signals — no transcript at '${TRANSCRIPT:-}'" >&2
+    exit 0
+fi
+
+require_uvx
 uvx --from "git+https://github.com/AndurilCode/chronicles[tfidf]" \
     chronicles signals "$TRANSCRIPT" --chronicles-dir "$CHRONICLES_DIR" || true
