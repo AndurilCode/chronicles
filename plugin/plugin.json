@@ -1,6 +1,6 @@
 {
   "name": "chronicles",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "Auto-extract knowledge from agent sessions into a codebase wiki",
   "repository": "https://github.com/AndurilCode/chronicles",
   "license": "MIT",
