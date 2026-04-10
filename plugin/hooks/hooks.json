@@ -17,6 +17,18 @@
         ]
       }
     ],
+    "SubagentStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/signals-context.sh\"",
+            "timeout": 10000
+          }
+        ]
+      }
+    ],
     "SubagentStop": [
       {
         "matcher": "",
