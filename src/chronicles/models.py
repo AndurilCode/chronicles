@@ -82,7 +82,7 @@ class ExtractionResult:
 class Signal:
     """A single agentic operational signal."""
     pattern: str        # what happened
-    type: str           # "mistake" or "efficient"
+    type: str           # "mistake" | "efficient" | "steer"
     rule: str           # imperative instruction for future agents
     context: list[str]  # tags like "tool:Grep", "area:navigation"
     severity: str       # "high" or "low"

@@ -19,7 +19,7 @@ STRIP_CONTENT_TOOLS = frozenset({"Read", "Glob"})
 STRIP_MATCH_TOOLS = frozenset({"Grep"})
 
 _BASH_MAX_LINES = 20
-_USER_MAX_LEN = 100
+_USER_MAX_LEN = 300  # keep enough for corrections/steers
 _ASSISTANT_MAX_LEN = 100
 
 _SEARCH_TOOLS = frozenset({"Read", "Grep", "Glob", "Bash"})

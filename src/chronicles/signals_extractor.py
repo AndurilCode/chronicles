@@ -8,7 +8,7 @@ import subprocess
 from chronicles.config import LLMConfig
 from chronicles.models import CleanedTranscript, Signal, SignalsResult
 
-_SYSTEM_PROMPT = """\
+_AGENT_PROMPT = """\
 You are analyzing an AI coding agent's TOOL USAGE BEHAVIOR. You look at the \
 sequence of tool calls and their results to find operational mistakes and \
 patterns that future agents should know about.
@@ -34,60 +34,73 @@ Return ONLY valid JSON (no markdown fences, no explanation):
 
 WHAT TO LOOK FOR in the tool call sequence:
 
-1. WRONG COMMANDS: Agent ran a command that failed, then tried a different one that worked.
+1. WRONG COMMAND: Agent ran a command that failed, then tried a different one that worked.
    Example: `pytest` failed → `uv run python -m pytest` worked.
    Signal: "Run tests with `uv run python -m pytest`, not bare `pytest`"
 
-2. WRONG TOOL: Agent used Bash to do something a dedicated tool does better.
+2. WRONG TOOL: Agent used Bash for something a dedicated tool does better.
    Example: Bash(`grep -r foo .`) → then Grep(pattern="foo")
-   Signal: "Use Grep tool instead of Bash grep"
 
-3. WRONG PATH: Agent searched in a directory that doesn't exist or has nothing, then found \
-it elsewhere.
-   Example: Glob(pattern="test/*.py") → empty → Glob(pattern="tests/*.py") → found files
-   Signal: "Tests are in `tests/`, not `test/`"
+3. WRONG PATH: Agent searched a non-existent directory, then found it elsewhere.
+   Example: Read("src/utils.py") → ERROR → Read("src/chronicles/utils.py") → OK
 
 4. HALLUCINATED PATH/COMMAND: Agent tried to read/run something that doesn't exist.
-   Example: Read("src/utils.py") → "File does not exist" → Read("src/chronicles/utils.py")
-   Signal: "No `src/utils.py` — source is under `src/chronicles/`"
 
-5. WASTED RETRIES: Agent tried the same kind of operation 3+ times with variations before \
-succeeding.
-   Example: Grep("config") in root → Grep("config") in src/ → Grep("config") in src/chronicles/
-   Signal: "Config module is at `src/chronicles/config.py`"
+5. WASTED RETRIES: 3+ attempts with variations before succeeding.
 
-6. EFFICIENT SHORTCUT: Agent navigated directly to the right location without searching.
-   Example: Read("src/chronicles/models.py") on first try
-   Signal: "Models are in `src/chronicles/models.py`"
+6. EFFICIENT SHORTCUT: Agent navigated directly to the right location.
 
 DO NOT EMIT:
 - Anything about what was discussed, designed, or decided in conversation
 - Anything about code architecture or implementation patterns
-- Generic agent advice that applies to ANY codebase ("read files once", "cache results", \
-"pre-read before editing", "combine commands") — these are not signals, they're common sense
-- Signals derived from what humans said — only from tool call/result sequences
+- Generic agent advice that applies to ANY codebase
 
-HARD FILTER: Every rule MUST contain a concrete path, filename, command, or structure \
-FROM THIS REPO. If you could copy-paste the rule into a different project and it would \
-still make sense, it is too generic — reject it.
+HARD FILTER: Every rule MUST reference a concrete path, command, or structure \
+FROM THIS REPO. If you could paste the rule into a different project and it \
+would still make sense, it is too generic — reject it.
 
-GOOD: "Tests are in `tests/`, not `test/`" (names a real directory)
-GOOD: "Run tests with `uv run python -m pytest`" (repo-specific command)
-BAD: "Read files once with higher line limit" (generic, applies anywhere)
-BAD: "Pre-read context before editing" (generic agent hygiene)
+DEMOTIONS: If any CURRENT SIGNAL is contradicted by tool behavior in this session, \
+include its EXACT rule text in "demotions".
 
-DEMOTIONS: If any CURRENT SIGNAL is contradicted by tool behavior in this session \
-(agent succeeded doing the opposite, or referenced path no longer exists), include \
-its EXACT rule text in "demotions".
-
-RULES:
-- "type": mistake | efficient
-- "severity": high (caused errors/backtracking) | low (minor)
-- Aim for 0-3 signals. Zero is the CORRECT answer for most sessions.
-- If nothing repo-specific found, return {"signals": [], "demotions": []}
+Aim for 0-3 signals. Zero is the CORRECT answer for most sessions.
 """
 
-_VALID_TYPE = {"mistake", "efficient"}
+_STEERS_PROMPT = """\
+You are extracting HUMAN RULES from a coding session transcript. Look ONLY at \
+[USER] messages for moments where the user CORRECTS the agent or gives an \
+EXPLICIT DIRECTIVE about how to work.
+
+Return ONLY valid JSON (no markdown fences, no explanation):
+{
+  "signals": [
+    {
+      "pattern": "string — what the user said",
+      "type": "steer",
+      "rule": "string — the rule the user established (under 100 chars)",
+      "context": ["string — tags"],
+      "severity": "high"
+    }
+  ],
+  "demotions": []
+}
+
+WHAT IS A STEER:
+- User corrects agent behavior: "no, not that — use X instead"
+- User sets a rule: "always use X for Y", "never do X", "stop doing X"
+- User rejects an approach and redirects to a specific alternative
+- User gives an explicit preference for how work should be done
+
+WHAT IS NOT A STEER:
+- User asking questions or giving requirements ("add feature X", "build Y")
+- User providing context or explaining the codebase
+- User approving or confirming ("ok", "looks good", "yes")
+- User asking for status or progress
+- Generic conversation that doesn't establish a rule
+
+Aim for 0-3 steers per session. Zero is correct for most sessions.
+"""
+
+_VALID_TYPE = {"mistake", "efficient", "steer"}
 _VALID_SEVERITY = {"high", "low"}
 
 
@@ -137,10 +150,11 @@ class SignalsExtractor:
 
     def _build_prompt(
         self,
+        system: str,
         transcript: CleanedTranscript,
         existing_signals: str | None = None,
     ) -> str:
-        lines: list[str] = [_SYSTEM_PROMPT]
+        lines: list[str] = [system]
 
         if existing_signals:
             lines.append("")
@@ -153,12 +167,12 @@ class SignalsExtractor:
         lines.append("")
         for chunk in transcript.chunks:
             for msg in chunk:
-                lines.append(self._format_message(msg))
+                formatted = self._format_message(msg)
+                if formatted:
+                    lines.append(formatted)
             lines.append("")
         lines.append("--- END TRANSCRIPT ---")
-        lines.append(
-            "Analyse the transcript above for agentic operational patterns. Return ONLY JSON."
-        )
+        lines.append("Return ONLY JSON.")
         return "\n".join(lines)
 
     @staticmethod
@@ -254,16 +268,37 @@ class SignalsExtractor:
                 return candidate
         return default
 
-    def extract(
-        self,
-        transcript: CleanedTranscript,
-        existing_signals: str | None = None,
-    ) -> SignalsResult:
-        prompt = self._build_prompt(transcript, existing_signals)
+    def _call_llm(self, prompt: str) -> str:
         cmd = ["claude", "--print", "--model", self.config.model, prompt]
         result = subprocess.run(cmd, capture_output=True, text=True, check=False)
         if result.returncode != 0:
             raise RuntimeError(
                 f"claude CLI failed (exit {result.returncode}): {result.stderr}"
             )
-        return self._parse_response(result.stdout)
+        return result.stdout
+
+    def extract(
+        self,
+        transcript: CleanedTranscript,
+        existing_signals: str | None = None,
+    ) -> SignalsResult:
+        import logging
+        _log = logging.getLogger("chronicles")
+
+        # Pass 1: Agent signals (tool behavior)
+        agent_prompt = self._build_prompt(_AGENT_PROMPT, transcript, existing_signals)
+        agent_result = self._parse_response(self._call_llm(agent_prompt))
+
+        # Pass 2: Human steers (user corrections)
+        steers_prompt = self._build_prompt(_STEERS_PROMPT, transcript)
+        try:
+            steers_result = self._parse_response(self._call_llm(steers_prompt))
+        except RuntimeError:
+            _log.warning("Steers extraction failed, continuing with agent signals only")
+            steers_result = SignalsResult(signals=[], demotions=[])
+
+        # Merge: combine signals from both passes
+        return SignalsResult(
+            signals=agent_result.signals + steers_result.signals,
+            demotions=agent_result.demotions + steers_result.demotions,
+        )

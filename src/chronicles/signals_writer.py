@@ -11,6 +11,10 @@ log = logging.getLogger("chronicles")
 _TEMPLATE = """\
 # Signals
 
+## Steers
+
+{steers}
+
 ## Active
 
 {active}
@@ -22,15 +26,22 @@ _TEMPLATE = """\
 
 
 def load_active_signals(signals_path: Path) -> str:
+    """Load Steers + Active sections for injection into future sessions."""
     if not signals_path.exists():
         return ""
     content = signals_path.read_text()
-    if "## Active" not in content:
-        return ""
-    active_section = content.split("## Active")[1]
-    if "## Demoted" in active_section:
-        active_section = active_section.split("## Demoted")[0]
-    return active_section.strip()
+    parts = []
+    for section in ("## Steers", "## Active"):
+        if section not in content:
+            continue
+        text = content.split(section)[1]
+        # Stop at next ## header
+        if "## " in text:
+            text = text.split("## ", 1)[0]
+        text = text.strip()
+        if text:
+            parts.append(text)
+    return "\n".join(parts)
 
 
 def update_signals_file(
@@ -39,15 +50,21 @@ def update_signals_file(
     session_id: str,
     max_active: int = 50,
 ) -> None:
+    steers_lines: list[str] = []
     active_lines: list[str] = []
     demoted_lines: list[str] = []
 
     if signals_path.exists():
         content = signals_path.read_text()
+        steers_lines = _parse_section(content, "## Steers")
         active_lines = _parse_section(content, "## Active")
         demoted_lines = _parse_section(content, "## Demoted")
 
-    # Apply demotions
+    # Separate new signals into steers vs agent signals
+    new_steers = [s for s in result.signals if s.type == "steer"]
+    new_agent = [s for s in result.signals if s.type != "steer"]
+
+    # Apply demotions to active signals only (steers are never auto-demoted)
     for demotion_rule in result.demotions:
         remaining = []
         for line in active_lines:
@@ -60,13 +77,18 @@ def update_signals_file(
                 remaining.append(line)
         active_lines = remaining
 
-    # Collect existing rule texts for dedup
-    existing_rules = {_extract_rule_text(line) for line in active_lines}
+    # Dedup steers
+    existing_steer_rules = {_extract_rule_text(line) for line in steers_lines}
+    for signal in new_steers:
+        if signal.rule not in existing_steer_rules:
+            tags = ",".join(signal.context)
+            steers_lines.append(f"- {signal.rule} [{tags}]")
 
-    # Add new signals (deduplicated)
+    # Dedup agent signals
+    existing_rules = {_extract_rule_text(line) for line in active_lines}
     new_high: list[str] = []
     new_low: list[str] = []
-    for signal in result.signals:
+    for signal in new_agent:
         if signal.rule in existing_rules:
             continue
         tags = ",".join(signal.context)
@@ -76,17 +98,18 @@ def update_signals_file(
         else:
             new_low.append(formatted)
 
-    # High severity at top, then existing, then new low severity
     active_lines = new_high + active_lines + new_low
 
-    # Enforce cap
+    # Enforce cap on active only (steers are uncapped)
     while len(active_lines) > max_active:
         active_lines.pop()
 
+    steers_text = "\n".join(steers_lines) if steers_lines else ""
     active_text = "\n".join(active_lines) if active_lines else ""
     demoted_text = "\n".join(demoted_lines) if demoted_lines else ""
 
     signals_path.write_text(_TEMPLATE.format(
+        steers=steers_text,
         active=active_text,
         demoted=demoted_text,
     ))

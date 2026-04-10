@@ -22,26 +22,30 @@ if [ ! -f "$SIGNALS_PATH" ]; then
     exit 0
 fi
 
-# Extract Active section only
-ACTIVE=$(python3 -c "
+# Extract Steers + Active sections (skip Demoted)
+SIGNALS=$(python3 -c "
 import sys
 content = open('$SIGNALS_PATH').read()
-if '## Active' not in content:
-    sys.exit(0)
-active = content.split('## Active')[1]
-if '## Demoted' in active:
-    active = active.split('## Demoted')[0]
-active = active.strip()
-if active:
-    print(active)
+parts = []
+for section in ('## Steers', '## Active'):
+    if section not in content:
+        continue
+    text = content.split(section)[1]
+    if '## ' in text:
+        text = text.split('## ', 1)[0]
+    text = text.strip()
+    if text:
+        parts.append(text)
+if parts:
+    print('\n'.join(parts))
 " 2>/dev/null)
 
-if [ -z "$ACTIVE" ]; then
+if [ -z "$SIGNALS" ]; then
     exit 0
 fi
 
-CONTEXT="Agentic operational signals from past sessions — follow these rules when using tools:
-${ACTIVE}"
+CONTEXT="Operational signals from past sessions — follow these rules:
+${SIGNALS}"
 
 python3 -c "
 import json, os, sys
@@ -51,3 +55,4 @@ if os.environ.get('CLAUDE_PLUGIN_ROOT'):
 else:
     print(json.dumps({'additionalContext': context}))
 " <<< "$CONTEXT"
+

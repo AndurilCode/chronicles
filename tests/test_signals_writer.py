@@ -172,3 +172,91 @@ def test_load_active_signals_missing_file(tmp_path):
     signals_path = tmp_path / "SIGNALS.md"
     active = load_active_signals(signals_path)
     assert active == ""
+
+
+# ── Steers ──
+
+
+def test_steers_go_to_steers_section(tmp_path):
+    signals_path = tmp_path / "SIGNALS.md"
+    result = SignalsResult(
+        signals=[
+            Signal(
+                pattern="User said: don't edit CLAUDE.md directly",
+                type="steer",
+                rule="Never edit CLAUDE.md — user maintains it manually",
+                context=["area:config"],
+                severity="high",
+            ),
+        ],
+        demotions=[],
+    )
+    update_signals_file(signals_path, result, session_id="steer1")
+    content = signals_path.read_text()
+    steers = content.split("## Steers")[1].split("## Active")[0]
+    assert "Never edit CLAUDE.md" in steers
+    active = content.split("## Active")[1].split("## Demoted")[0]
+    assert "Never edit CLAUDE.md" not in active
+
+
+def test_steers_not_auto_demoted(tmp_path):
+    signals_path = tmp_path / "SIGNALS.md"
+    signals_path.write_text(
+        "# Signals\n\n## Steers\n\n"
+        "- Always use uv run for commands [area:env]\n\n"
+        "## Active\n\n## Demoted\n"
+    )
+    result = SignalsResult(
+        signals=[],
+        demotions=["Always use uv run for commands"],
+    )
+    update_signals_file(signals_path, result, session_id="nodemo")
+    content = signals_path.read_text()
+    steers = content.split("## Steers")[1].split("## Active")[0]
+    # Steer should still be there — demotions only affect Active
+    assert "Always use uv run" in steers
+
+
+def test_load_includes_steers_and_active(tmp_path):
+    signals_path = tmp_path / "SIGNALS.md"
+    signals_path.write_text(
+        "# Signals\n\n## Steers\n\n"
+        "- Human rule here [area:X]\n\n"
+        "## Active\n\n"
+        "- Agent rule here [area:Y]\n\n"
+        "## Demoted\n\n"
+        "- ~~Old rule~~ (contradicted)\n"
+    )
+    loaded = load_active_signals(signals_path)
+    assert "Human rule here" in loaded
+    assert "Agent rule here" in loaded
+    assert "Old rule" not in loaded
+
+
+def test_mixed_steers_and_signals(tmp_path):
+    signals_path = tmp_path / "SIGNALS.md"
+    result = SignalsResult(
+        signals=[
+            Signal(
+                pattern="User corrected test command",
+                type="steer",
+                rule="Use `uv run python -m pytest`, not bare pytest",
+                context=["tool:Bash", "area:testing"],
+                severity="high",
+            ),
+            Signal(
+                pattern="Agent searched wrong dir",
+                type="mistake",
+                rule="Source is under `src/chronicles/`, not `src/`",
+                context=["area:navigation"],
+                severity="high",
+            ),
+        ],
+        demotions=[],
+    )
+    update_signals_file(signals_path, result, session_id="mixed1")
+    content = signals_path.read_text()
+    steers = content.split("## Steers")[1].split("## Active")[0]
+    active = content.split("## Active")[1].split("## Demoted")[0]
+    assert "uv run python -m pytest" in steers
+    assert "src/chronicles/" in active

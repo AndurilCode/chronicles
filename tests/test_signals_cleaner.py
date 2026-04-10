@@ -117,7 +117,7 @@ def test_strips_long_requirement_messages():
     result = clean_transcript_for_signals(_make_transcript(messages))
     user_msgs = [m for chunk in result.chunks for m in chunk if m.role == "user"]
     assert len(user_msgs) == 1
-    assert len(user_msgs[0].content) <= 100
+    assert len(user_msgs[0].content) <= 300
 
 
 def test_preserves_assistant_reasoning():

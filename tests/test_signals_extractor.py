@@ -32,7 +32,7 @@ def test_build_prompt_includes_transcript():
                 tool_input={"pattern": "config", "path": "src/"}),
     ]]
     ext = SignalsExtractor(_make_config())
-    prompt = ext._build_prompt(_make_cleaned(chunks))
+    prompt = ext._build_prompt("test system prompt", _make_cleaned(chunks))
     assert "[CALL: Grep]" in prompt
     assert "config" in prompt
 
@@ -41,7 +41,7 @@ def test_build_prompt_includes_existing_signals():
     ext = SignalsExtractor(_make_config())
     chunks = [[Message(role="user", content="hello", timestamp="T0")]]
     existing = "- Use Grep tool instead of Bash grep [tool:Bash,Grep]"
-    prompt = ext._build_prompt(_make_cleaned(chunks), existing_signals=existing)
+    prompt = ext._build_prompt("test system prompt", _make_cleaned(chunks), existing_signals=existing)
     assert "CURRENT SIGNALS" in prompt
     assert "Use Grep tool" in prompt
 
@@ -107,7 +107,8 @@ def test_parse_response_repairs_trailing_comma():
     assert len(result.signals) == 1
 
 
-def test_extract_calls_claude_cli():
+def test_extract_calls_claude_cli_twice():
+    """Extract makes two LLM calls: agent signals + steers."""
     ext = SignalsExtractor(_make_config())
     chunks = [[Message(role="user", content="test", timestamp="T0")]]
     response = json.dumps({"signals": [], "demotions": []})
@@ -118,11 +119,38 @@ def test_extract_calls_claude_cli():
         )
         result = ext.extract(_make_cleaned(chunks))
 
-    mock_run.assert_called_once()
-    cmd = mock_run.call_args[0][0]
+    assert mock_run.call_count == 2  # agent + steers
+    cmd = mock_run.call_args_list[0][0][0]
     assert cmd[0] == "claude"
     assert "--print" in cmd
     assert isinstance(result, SignalsResult)
+
+
+def test_extract_merges_agent_and_steers():
+    ext = SignalsExtractor(_make_config())
+    chunks = [[Message(role="user", content="test", timestamp="T0")]]
+    agent_response = json.dumps({
+        "signals": [{"pattern": "p", "type": "mistake", "rule": "agent rule",
+                     "context": [], "severity": "high"}],
+        "demotions": [],
+    })
+    steers_response = json.dumps({
+        "signals": [{"pattern": "p", "type": "steer", "rule": "human rule",
+                     "context": [], "severity": "high"}],
+        "demotions": [],
+    })
+
+    with patch("subprocess.run") as mock_run:
+        mock_run.side_effect = [
+            MagicMock(returncode=0, stdout=agent_response, stderr=""),
+            MagicMock(returncode=0, stdout=steers_response, stderr=""),
+        ]
+        result = ext.extract(_make_cleaned(chunks))
+
+    assert len(result.signals) == 2
+    types = {s.type for s in result.signals}
+    assert "mistake" in types
+    assert "steer" in types
 
 
 def test_extract_raises_on_cli_failure():
