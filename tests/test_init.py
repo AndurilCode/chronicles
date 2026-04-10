@@ -1,6 +1,7 @@
 """Tests for chronicles init command."""
 from chronicles.init import generate_config, prompt_provider, prompt_model, prompt_sources, prompt_ollama
 from chronicles.init import run_init
+from chronicles.cli import main
 
 
 def test_generate_config_claude_code():
@@ -182,3 +183,36 @@ def test_run_init_interactive(tmp_path, monkeypatch):
     assert "- claude-code" in config_text
     assert "- copilot-cli" in config_text
     assert "- copilot-vscode" not in config_text
+
+
+def test_cli_init_with_flags(tmp_path):
+    chronicles_dir = tmp_path / "chronicles"
+    main([
+        "init",
+        "--chronicles-dir", str(chronicles_dir),
+        "--provider", "claude-code",
+        "--model", "haiku",
+        "--source", "claude-code",
+        "--source", "copilot-cli",
+    ])
+    assert (chronicles_dir / "config.yaml").exists()
+    config_text = (chronicles_dir / "config.yaml").read_text()
+    assert "provider: claude-code" in config_text
+    assert "model: haiku" in config_text
+    assert "- claude-code" in config_text
+    assert "- copilot-cli" in config_text
+
+
+def test_cli_init_interactive(tmp_path, monkeypatch):
+    chronicles_dir = tmp_path / "chronicles"
+    responses = iter(["1", "my-model", "1"])
+    monkeypatch.setattr("builtins.input", lambda _: next(responses))
+
+    main([
+        "init",
+        "--chronicles-dir", str(chronicles_dir),
+    ])
+
+    config_text = (chronicles_dir / "config.yaml").read_text()
+    assert "provider: claude-code" in config_text
+    assert "model: my-model" in config_text

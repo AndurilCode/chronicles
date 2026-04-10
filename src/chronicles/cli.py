@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from chronicles.config import load_config
+from chronicles.init import run_init
 from chronicles.cleaner import clean_transcript
 from chronicles.enricher import enrich
 from chronicles.extractor import Extractor
@@ -59,6 +60,19 @@ def main(argv: list[str] | None = None) -> None:
     signals_p.add_argument("--last", type=int, default=None, metavar="N",
                           help="Only process the N most recent discovered sessions")
 
+    init_p = sub.add_parser("init", help="Scaffold chronicles directory and generate config.yaml")
+    init_p.add_argument("--chronicles-dir", type=Path, default=Path("chronicles"),
+                        help="Path to chronicles directory")
+    init_p.add_argument("--provider", type=str, default=None,
+                        choices=["claude-code", "copilot-cli", "ollama"],
+                        help="LLM provider")
+    init_p.add_argument("--model", type=str, default=None,
+                        help="LLM model name")
+    init_p.add_argument("--source", type=str, action="append", default=None,
+                        dest="sources",
+                        choices=["claude-code", "copilot-cli", "copilot-vscode"],
+                        help="Transcript source (repeatable)")
+
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -74,6 +88,8 @@ def main(argv: list[str] | None = None) -> None:
         _run_enrich(args)
     elif args.command == "signals":
         _run_signals(args)
+    elif args.command == "init":
+        _run_init(args)
 
 
 def _parse_and_clean_one(args: tuple[Path, str | None]):
@@ -340,6 +356,15 @@ def _run_signals(args: argparse.Namespace) -> None:
             max_active=config.signals.max_active,
         )
         log.info("Updated %s", signals_path.relative_to(chronicles_dir))
+
+
+def _run_init(args: argparse.Namespace) -> None:
+    run_init(
+        chronicles_dir=args.chronicles_dir,
+        provider=args.provider,
+        model=args.model,
+        sources=args.sources,
+    )
 
 
 if __name__ == "__main__":
