@@ -150,16 +150,18 @@ def run_init(
     If provider/model/sources are None, prompts interactively.
     """
     # Interactive prompts for missing values
-    if provider is None:
-        provider = prompt_provider()
-    if model is None:
-        model = prompt_model()
-    if sources is None:
-        sources = prompt_sources()
-
-    # Prompt for ollama settings if interactive and provider is ollama
-    if provider == "ollama" and _is_interactive():
-        ollama_base_url, ollama_timeout = prompt_ollama()
+    try:
+        if provider is None:
+            provider = prompt_provider()
+        if model is None:
+            model = prompt_model()
+        if sources is None:
+            sources = prompt_sources()
+        if provider == "ollama" and _is_interactive():
+            ollama_base_url, ollama_timeout = prompt_ollama()
+    except KeyboardInterrupt:
+        print("\nAborted.")
+        raise SystemExit(130)
 
     # Scaffold directory structure
     _ensure_dir(chronicles_dir)

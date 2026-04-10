@@ -1,4 +1,5 @@
 """Tests for chronicles init command."""
+import pytest
 from chronicles.init import generate_config, prompt_provider, prompt_model, prompt_sources, prompt_ollama
 from chronicles.init import run_init
 from chronicles.cli import main
@@ -216,3 +217,25 @@ def test_cli_init_interactive(tmp_path, monkeypatch):
     config_text = (chronicles_dir / "config.yaml").read_text()
     assert "provider: claude-code" in config_text
     assert "model: my-model" in config_text
+
+
+def test_run_init_ctrl_c_exits_cleanly(tmp_path, monkeypatch):
+    chronicles_dir = tmp_path / "chronicles"
+    monkeypatch.setattr("builtins.input", lambda _: (_ for _ in ()).throw(KeyboardInterrupt))
+
+    with pytest.raises(SystemExit) as exc_info:
+        run_init(chronicles_dir=chronicles_dir)
+    assert exc_info.value.code == 130
+    # No config.yaml should exist
+    assert not (chronicles_dir / "config.yaml").exists()
+
+
+def test_cli_init_invalid_provider(tmp_path):
+    with pytest.raises(SystemExit) as exc_info:
+        main([
+            "init",
+            "--chronicles-dir", str(tmp_path / "chronicles"),
+            "--provider", "invalid",
+            "--model", "haiku",
+        ])
+    assert exc_info.value.code == 2  # argparse error
