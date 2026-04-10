@@ -17,6 +17,18 @@
         ]
       }
     ],
+    "SubagentStop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/signals-subagent.sh\"",
+            "timeout": 600000
+          }
+        ]
+      }
+    ],
     "SessionEnd": [
       {
         "matcher": "",

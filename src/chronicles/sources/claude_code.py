@@ -67,6 +67,9 @@ class ClaudeCodeSource(BaseSource):
         # Map tool_use_id -> tool_name for resolving tool_result tool_name
         tool_id_to_name: dict[str, str] = {}
 
+        # Subagent transcripts live in subagents/ and are entirely sidechain
+        is_subagent = "/subagents/" in str(session_path)
+
         with session_path.open(encoding="utf-8") as f:
             for raw_line in f:
                 raw_line = raw_line.strip()
@@ -77,8 +80,8 @@ class ClaudeCodeSource(BaseSource):
                 except json.JSONDecodeError:
                     continue
 
-                # Skip sidechain events
-                if event.get("isSidechain", False):
+                # Skip sidechain events (unless this IS a subagent transcript)
+                if not is_subagent and event.get("isSidechain", False):
                     continue
 
                 ts = event.get("timestamp", "")
