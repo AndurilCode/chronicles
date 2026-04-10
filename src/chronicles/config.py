@@ -54,6 +54,7 @@ class GapsConfig:
 class SignalsConfig:
     max_active: int = 50
     demoted_retention_days: int = 90
+    subagents: bool = True
 
 
 @dataclass
@@ -127,6 +128,7 @@ def load_config(chronicles_dir: Path) -> ChroniclesConfig:
     signals = SignalsConfig(
         max_active=signals_raw.get("max_active", 50),
         demoted_retention_days=signals_raw.get("demoted_retention_days", 90),
+        subagents=signals_raw.get("subagents", True),
     )
 
     return ChroniclesConfig(
