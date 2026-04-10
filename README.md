@@ -31,9 +31,11 @@ This scaffolds the directory structure and generates a `config.yaml` through an 
 chronicles init --provider ollama --model gemma3:12b --source claude-code --source copilot-cli
 ```
 
-The plugin installs two hooks:
-- **SessionStart** — injects an orientation blurb and `GOLD.md` content into the agent's context
-- **SessionEnd** — ingests the session transcript into the wiki via `uvx`
+The plugin installs four hooks:
+- **SessionStart** — injects `GOLD.md` and operational signals into the agent's context
+- **SubagentStart** — injects operational signals into subagent context
+- **SubagentStop** — extracts signals from subagent transcripts (async)
+- **SessionEnd** — ingests the session transcript and extracts signals (async)
 
 ### Manual (pip)
 
