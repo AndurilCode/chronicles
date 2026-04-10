@@ -282,22 +282,25 @@ class SignalsExtractor:
         transcript: CleanedTranscript,
         existing_signals: str | None = None,
     ) -> SignalsResult:
+        from concurrent.futures import ThreadPoolExecutor
         import logging
         _log = logging.getLogger("chronicles")
 
-        # Pass 1: Agent signals (tool behavior)
         agent_prompt = self._build_prompt(_AGENT_PROMPT, transcript, existing_signals)
-        agent_result = self._parse_response(self._call_llm(agent_prompt))
-
-        # Pass 2: Human steers (user corrections)
         steers_prompt = self._build_prompt(_STEERS_PROMPT, transcript)
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            agent_future = pool.submit(self._call_llm, agent_prompt)
+            steers_future = pool.submit(self._call_llm, steers_prompt)
+
+        agent_result = self._parse_response(agent_future.result())
+
         try:
-            steers_result = self._parse_response(self._call_llm(steers_prompt))
+            steers_result = self._parse_response(steers_future.result())
         except RuntimeError:
             _log.warning("Steers extraction failed, continuing with agent signals only")
             steers_result = SignalsResult(signals=[], demotions=[])
 
-        # Merge: combine signals from both passes
         return SignalsResult(
             signals=agent_result.signals + steers_result.signals,
             demotions=agent_result.demotions + steers_result.demotions,
